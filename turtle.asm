@@ -1,3 +1,8 @@
+;-------------------------------------------------------------------------------
+;	author: Gabriel Skowron-Rodriguez
+;	description : My x86 32bit implementation of project 6.20 "Binary turtle graphics - version 6"
+;-------------------------------------------------------------------------------
+
 SECTION .DATA
 ; turtle attributes ; location on the stack (after the start of the function)
 ;	position_x: dd 0
@@ -6,20 +11,31 @@ SECTION .DATA
 ;	pen_color dd 0x00RRGGBB
 ;	pen_state db 0
 
+    printf_format: db "Result: %d",0xA,0 ; debug code
+
+	extern printf
+
+%macro debug_print 1
+	push dword %1 ; 2nd printf argument
+	push dword printf_format ; 1st printf argument
+	call printf ; printf(printf_format, 1);
+	add esp, 2*4; clear the stack
+%endmacro
 ; where to find the turtle's attributes on the stack (conting from ESP just after loading in the initial state of the turtle)
+PRESERVED_REGISTERS_SIZE equ 4; how much space non-volatile registers occupy after the prologue
 TURTLE_ATTRIBUTES_SIZE equ 12; all attributes except for color take up 2 bytes + color takes 4, so 4*2 + 4 = 12
 
-TURTLE_OFFSET_POSITION_X equ 0
+TURTLE_OFFSET_POSITION_X equ 0; it is at the top of the stack
 TURTLE_OFFSET_POSITION_Y equ 2 + TURTLE_OFFSET_POSITION_X ; 2
 TURTLE_OFFSET_DIRECTION equ 2 + TURTLE_OFFSET_POSITION_Y ; 4
 TURTLE_OFFSET_PEN_STATE equ 2 + TURTLE_OFFSET_DIRECTION ; 6
 TURTLE_OFFSET_PEN_COLOR equ 2 + TURTLE_OFFSET_PEN_STATE; 8
 
 ; where to find turtle() arguments on the stack (counting from ESP at the beginning of the turtle() function) - adding TURTLE_ATTRIBUTES_SIZE in trivial cases to locate an argument exactly
-ARGUMENT_OFFSET_dest_bitmap equ 8 + TURTLE_ATTRIBUTES_SIZE
-ARGUMENT_OFFSET_commands equ 12 + TURTLE_ATTRIBUTES_SIZE
-ARGUMENT_OFFSET_commands_size equ 16 + TURTLE_ATTRIBUTES_SIZE
-ARGUMENT_OFFSET_turtle_attributes equ 20 + TURTLE_ATTRIBUTES_SIZE
+ARGUMENT_OFFSET_dest_bitmap equ 12 + TURTLE_ATTRIBUTES_SIZE + PRESERVED_REGISTERS_SIZE
+ARGUMENT_OFFSET_commands equ 16 + TURTLE_ATTRIBUTES_SIZE + PRESERVED_REGISTERS_SIZE
+ARGUMENT_OFFSET_commands_size equ 20 + TURTLE_ATTRIBUTES_SIZE + PRESERVED_REGISTERS_SIZE
+ARGUMENT_OFFSET_turtle_attributes equ 24 + TURTLE_ATTRIBUTES_SIZE + PRESERVED_REGISTERS_SIZE
 
 ; image processing constants
 ; only 24-bits 600x50 pixels BMP files are supported
@@ -55,27 +71,42 @@ turtle:
 ;	save the caller's frame pointer
 	push ebp
 	mov ebp, esp
+	push ebx ; proably will be using this so it should be preserved
 
-;	load and store the turtle parameters
+;	load and store the turtle parameters on the stack (for faster access)
 	
-	mov eax, 0x00000000 ; load turtle's pen color
-	push eax;	in the end, it is located at [esp+8] (but it takes up 4 bytes) / [esp + TURTLE_OFFSET_PEN_COLOR]
-	
-	mov eax, 0; make sure that the register is fully zeroed
-	
-	mov ax, 0; load turtle's pen state
-	push ax;	in the end, it is located at [esp+6] / [esp + TURTLE_OFFSET_PEN_STATE]
-	
-	mov ax, 0; load turtle's direction
-	push ax;	in the end, it is located at [esp+4] / [esp + TURTLE_OFFSET_DIRECTION]
+	mov ecx, [esp+24] ; get pointer to turtle attributes
+	mov ebx, [ecx] ; load turtle's pen color
+	push ebx;	in the end, it is located at [esp+8] (but it takes up 4 bytes) / [esp + TURTLE_OFFSET_PEN_COLOR]
 
-	mov ax, 0; load turtle's position_y
-	push ax;	in the end, it is located at [esp+2] / [esp + TURTLE_OFFSET_POSITION_Y]
+	mov ebx, 0; make sure that the register is fully zeroed
+	
+	mov ecx, [esp+24+4] ; get pointer to turtle attributes ( adjusted for the newly pushed color)
+	mov bx, 0; load turtle's pen state
+	push bx;	in the end, it is located at [esp+6] / [esp + TURTLE_OFFSET_PEN_STATE]
+	
+	mov bx, 0; load turtle's direction
+	push bx;	in the end, it is located at [esp+4] / [esp + TURTLE_OFFSET_DIRECTION]
 
-	mov ax, 0; load turtle's position_x
-	push ax;	in the end, it is located at [esp] / [esp + TURTLE_OFFSET_POSITION_X]
+	mov bx, 0; load turtle's position_y
+	push bx;	in the end, it is located at [esp+2] / [esp + TURTLE_OFFSET_POSITION_Y]
+
+	mov bx, 0; load turtle's position_x
+	push bx;	in the end, it is located at [esp] / [esp + TURTLE_OFFSET_POSITION_X]
 
 ;	execute the given batch of commands
+
+	; TEMP : CHANGE PEN COLOR BY 4
+
+	debug_print TURTLE_OFFSET_PEN_COLOR
+
+	mov ebx, [esp + TURTLE_OFFSET_PEN_COLOR]; read the pen_color ;
+	add ebx, 4; increment pen_color
+
+	debug_print ebx
+
+	mov dword [esp + TURTLE_OFFSET_PEN_COLOR], ebx; apply the change to pen_color
+
 ; FOR NOW ASSUMING THAT '* commands' PROVIDE ONLY THE INSTRUCTIONS
 
 
@@ -84,8 +115,8 @@ turtle:
 	mov ecx, [esp + ARGUMENT_OFFSET_dest_bitmap] ; read the address of the destination bit map
 	mov edx, ecx ; read the number that is stored in the register (the adress)
 
-	mov ecx, 0; prepare the 32 bit register to read only the first 8 bits
-	mov cl, [edx+2] ; read the "2nd" number under the adress stored in edx
+	mov ebx, 0; prepare the 32 bit register to read only the first 8 bits
+	mov bl, [edx+2] ; read the "2nd" number under the adress stored in edx
 
 	; how referencing and dereferencing works
 	; [reg] - read the register's content as value
@@ -100,26 +131,29 @@ turtle:
 ;	epilogue
 ;	save the turtle attributes (pass them back so if called again, the turtle resumes from the state it has ended in)
 	
-	mov eax, 0; make sure that the register is fully zeroed
+	;mov ecx, [esp + ARGUMENT_OFFSET_turtle_attributes]; store the argument offset
+
+	mov ebx, 0; make sure that the register is fully zeroed
 	
-	pop ax
-	mov ax, 0; store turtle's position_x
+	pop bx
+	mov bx, 0; store turtle's position_x
 
-	pop ax
-	mov ax, 0; store turtle's position_y
+	pop bx
+	mov bx, 0; store turtle's position_y
 
-	pop ax;
-	mov ax, 0; store turtle's direction
+	pop bx;
+	mov bx, 0; store turtle's direction
 
-	pop ax
+	pop bx
 	mov ax, 0; store turtle's pen state
 
-	pop eax
-	mov eax, 0x00FFFFFF; store turtle's pen color
+	pop ebx ; update the adress of the pen color
+	mov ecx, [esp + 24] ; get the adress of the pen color
+	mov dword [ecx], ebx; store turtle's pen color
 
 ; return caller's frame pointer
-	mov eax, ecx ; turtle return value (temp: ecx - to read the 2nd char from dest_bitmap)
-
+	mov eax, ebx ; turtle return value (TEMP for now we return the pen_color)
+	pop ebx
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller

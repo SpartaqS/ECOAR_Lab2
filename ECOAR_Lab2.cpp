@@ -27,6 +27,7 @@ int main()
 		std::cout << "Turtle starting:\n";
 		int turtleResult = turtle(destinationBitmap, commands, 10, turtle_attributes);
 		std::cout << "Turtle finishing with result: "<< turtleResult << "\n";
+		std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 		reachedEndOfFile = true;
 	}
 
@@ -74,7 +75,7 @@ unsigned char* InitializeTurtleAttributes()
 
 	for (int i = 0; i < constants::TURTLE_ATTRIBUTES_SIZE; i++) // sets initial coordinates to (0,0), direction to 'up', pen color to black, pen state to 'lowered'
 	{
-		initializedAttributes[i] = 0;
+		initializedAttributes[i] = 48 + i;
 	}
 
 	return initializedAttributes;
