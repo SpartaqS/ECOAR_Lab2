@@ -21,7 +21,8 @@ int main()
 
 	commands[0] = 'b';
 
-	while (!reachedEndOfFile)
+	int i = 2;
+	while (!reachedEndOfFile || i > 0)
 	{
 		std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 		std::cout << "Turtle starting:\n";
@@ -29,6 +30,7 @@ int main()
 		std::cout << "Turtle finishing with result: "<< turtleResult << "\n";
 		std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 		reachedEndOfFile = true;
+		i--;
 	}
 
 	SaveBMP(destinationBitmap);
@@ -75,7 +77,7 @@ unsigned char* InitializeTurtleAttributes()
 
 	for (int i = 0; i < constants::TURTLE_ATTRIBUTES_SIZE; i++) // sets initial coordinates to (0,0), direction to 'up', pen color to black, pen state to 'lowered'
 	{
-		initializedAttributes[i] = 48 + i;
+		initializedAttributes[i] = 48;
 	}
 
 	return initializedAttributes;
