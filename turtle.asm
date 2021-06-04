@@ -97,6 +97,9 @@ turtle:
 
 ;	execute the given batch of commands
 
+
+; DEBUG CODE AHEAD
+	jmp epilogue ; comment out to start debug
 	; TEMP : CHANGE PEN COLOR BY 1
 
 	mov ebx, [esp + TURTLE_OFFSET_PEN_COLOR]; read the pen_color
@@ -141,9 +144,6 @@ turtle:
 	debug_print ebx
 	mov word [esp + TURTLE_OFFSET_POSITION_X], bx; apply the change to pen_color
 
-; FOR NOW ASSUMING THAT '* commands' PROVIDE ONLY THE INSTRUCTIONS
-
-
 ; random temporary stuff
 	; how to read the 2nd element of an array pointed by esp+8
 	mov ecx, [esp + ARGUMENT_OFFSET_dest_bitmap] ; read the address of the destination bit map
@@ -162,7 +162,7 @@ turtle:
 	;add al, [direction]		; again, because the target register is 8 bits long, the first 8 bits under the adress of 'direction' are subtracted from al
 	;mov ecx, eax ; USE TO SEE THE OUTPUT OF MANIPULATING STATIC VARS
 
-;	epilogue
+epilogue:
 ;	save the turtle attributes (pass them back so if called again, the turtle resumes from the state it has ended in)
 	
 	;mov ecx, [esp + ARGUMENT_OFFSET_turtle_attributes]; store the argument offset

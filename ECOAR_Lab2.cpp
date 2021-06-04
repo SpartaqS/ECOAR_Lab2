@@ -9,28 +9,47 @@ int main()
 	bool reachedEndOfFile = false;
 
 	unsigned char* destinationBitmap = InitializeDestinationBitmap();
-	unsigned char* commands = new unsigned char[10];
+	unsigned char* commands = new unsigned char[constants::INSTRUCTIONS_BUFFER_SIZE];
 	unsigned char* turtle_attributes = InitializeTurtleAttributes(); // used store the turtle arguments between turtle() calls (non-compressed)
-	/*
-	for (int i = 0; i < 10; i++)
+	int commandsSize = 0;
+	int nextCommandToRead = 0;
+	
+	while (!reachedEndOfFile)
 	{
-		destinationBitmap[i] = i + 48;
-	}*/
+		commandsSize = ReadInstructions(commands, nextCommandToRead);
+		if (commandsSize > 0)
+		{
+			nextCommandToRead += commandsSize; // so we know where to start reading next time
+			std::cout << "Turtle Commands ( " << commandsSize << " total ) :";
+			for (int i = 0; i < commandsSize; i++)
+			{
+				std::cout << (int)commands[i] << " ";
+			}
 
+			std::cout << "\n";
 
+			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
+			std::cout << "Turtle starting:\n";
+			int turtleResult = turtle(destinationBitmap, commands, commandsSize, turtle_attributes);
+			std::cout << "Turtle finishing with result: " << turtleResult << "\n";
+			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 
-	commands[0] = 'b';
-
-	int i = 2;
-	while (!reachedEndOfFile || i > 0)
-	{
-		std::cout << "Turtle attributes :" << turtle_attributes << "\n";
-		std::cout << "Turtle starting:\n";
-		int turtleResult = turtle(destinationBitmap, commands, 10, turtle_attributes);
-		std::cout << "Turtle finishing with result: "<< turtleResult << "\n";
-		std::cout << "Turtle attributes :" << turtle_attributes << "\n";
-		reachedEndOfFile = true;
-		i--;
+			if (turtleResult == -1) // detected a two-word command that was cut in half
+			{
+				if (commandsSize > 2 && commandsSize < constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
+				{
+					nextCommandToRead -= 2; // read the severed set_position command as the first one in the next batch of instructions
+				}
+				else
+				{
+					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it
+				}
+			}
+		}
+		else
+		{
+			reachedEndOfFile = true;
+		}
 	}
 
 	SaveBMP(destinationBitmap);
@@ -91,6 +110,23 @@ void WriteIntToChar(int integerToWrite, unsigned char* targetCharArray, unsigned
 		targetCharArray[startingChar + i] = charToWrite;
 		integerToWrite = integerToWrite /256; // shift by 4 bits (1 byte)
 	}
+}
+
+int ReadInstructions(unsigned char* commandsBuffer, int whereToStart)
+{
+	std::ifstream inputFile("input.bin", std::ios::in | std::ios::binary);
+	if (inputFile.is_open())
+	{
+		int readBytesCount = 0;
+		inputFile.seekg(whereToStart, std::ios::beg);
+		inputFile.read((char*)commandsBuffer, constants::INSTRUCTIONS_BUFFER_SIZE);
+		readBytesCount = (int)inputFile.gcount();
+
+		inputFile.close();
+
+		return readBytesCount;
+	} // else there was an error when opening the file
+	return 0;
 }
 
 bool SaveBMP(unsigned char* bitmapToSave)
