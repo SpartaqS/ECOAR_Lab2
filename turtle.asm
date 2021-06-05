@@ -11,17 +11,20 @@ SECTION .DATA
 ;	pen_color dd 0x00RRGGBB
 ;	pen_state db 0
 
-    printf_format: db "Result: %d",0xA,0 ; debug code
 
+; TEMP DEBUG PRINT
+    printf_format: db "Result: %d",0xA,0 ; debug code
 	extern printf
 
 %macro debug_print 1
+	pushad; store all registers (so they do not get spoiled by the printf)
 	push dword %1 ; 2nd printf argument
 	push dword printf_format ; 1st printf argument
 	call printf ; printf(printf_format, 1);
-	add esp, 4; clear the stack
-	pop dword %1
+	add esp, 2*4; clear the stack
+	popad; restore all registers
 %endmacro
+
 ; where to find the turtle's attributes on the stack (conting from ESP just after loading in the initial state of the turtle)
 PRESERVED_REGISTERS_SIZE equ 8; how much space non-volatile registers occupy after the prologue
 TURTLE_ATTRIBUTES_SIZE equ 12; all attributes except for color take up 2 bytes + color takes 4, so 4*2 + 4 = 12; those 1 byte long data have to occupy at least 2 byets because push works for at least 2 byte long data
@@ -80,27 +83,18 @@ turtle:
 	mov esi, [esp + 20 + PRESERVED_REGISTERS_SIZE] ; get pointer to turtle attributes
 	mov ebx, [esi + 0] ; load turtle's pen color
 	push ebx;	in the end, it is located at [esp+8] (but it takes up 4 bytes) / [esp + TURTLE_OFFSET_PEN_COLOR]
-		debug_print ebx
-
 	mov ebx, 0; make sure that the register is fully zeroed
 	
 	mov bl, [esi + 4]; load turtle's pen state
-	debug_print ebx
 	push bx;	in the end, it is located at [esp+6] / [esp + TURTLE_OFFSET_PEN_STATE]
 	
 	mov bl, [esi + 5]; load turtle's direction
-		debug_print ebx
-
 	push bx;	in the end, it is located at [esp+4] / [esp + TURTLE_OFFSET_DIRECTION]
 
 	mov bl, [esi + 6]; load turtle's position_y
-		debug_print ebx
-
 	push bx;	in the end, it is located at [esp+2] / [esp + TURTLE_OFFSET_POSITION_Y]
 
 	mov bx, [esi + 7]; load turtle's position_x
-		debug_print ebx
-
 	push bx;	in the end, it is located at [esp] / [esp + TURTLE_OFFSET_POSITION_X]
 
 ;	execute the given batch of commands
@@ -112,33 +106,35 @@ read_next_instruction:
 	cmp ebx, eax ; check if we have finished reading
 	jg exit_normal ; we have successfully finished processing the batch of instructions: return control to the caller
 
-	;debug_print ebx ; if we have not read all instructions: decode the instruction
+	; if we have not read all instructions: decode the instruction
 
 	mov esi, [esp + ARGUMENT_OFFSET_commands]; get pointer to the commands
 	;debug_print esi
 	;debug_print ebx
 	mov ax, 0
 	mov ax, [esi + ebx - 2]; load the command word (-2 to account for the checking of availability of 2 bytes - a full word)
+	mov ecx, eax; copy the commad word so we can decode it
 
-	and ax, MASK_COMMAND_TYPE ; read command type
-	cmp ax, 192;  (11)000000 - set direction command
-	;je read_set_direction_command
-	cmp ax, 64;  (01)000000 - set pen state command
-	;je read_set_pen_state_command
-	cmp ax, 0;  (00)000000 - move command X
-	;je read_move_command
+	and cx, MASK_COMMAND_TYPE ; read command type
+	cmp cx, 192;  (11)000000 - set direction command
+	je read_set_direction_command
+	cmp cx, 64;  (01)000000 - set pen state command
+	je read_set_pen_state_command
+	cmp cx, 0;  (00)000000 - move command X
+	je read_move_command
 	; the masked out bits are equal to (10)000000 - set position command X
 
+; set position command decoding
 	; check if there is a next word to read 'X' from
-	mov eax, [esp + ARGUMENT_OFFSET_commands_size] ; read commands_size
+	mov ecx, [esp + ARGUMENT_OFFSET_commands_size] ; read commands_size
 	add ebx, 2; the second command word has been provided if and only if (ebx + 2) <= commands_size
-	cmp ebx, eax ; check if( (ebx + 2) <= commands_size)
+	cmp ebx, ecx ; check if( (ebx + 2) <= commands_size)
 	jg exit_request_full_set_position_command ; we found out that the set_position command's first word is at the end of the commands "list": exit and ask for both command words at once
 	
 	; we do have both set_position command's words
 	
 	; decode the target 'Y' coordinate
-	mov ax, [esi + ebx - 4]; load the first word of the set_position command
+	; the first word of the set_position command is already loaded into eax
 		; the ax register's contents: { (8 irrelevant bits) | 1 0 y5 y4 y3 y2 y1 y0 }
 		; so we can just mask out the correct bits to get the 'Y' coordinate in the appropriate form
 	and ax, MASK_SET_POSITION_Y; directly obtain the value of 'Y'
@@ -156,8 +152,102 @@ read_next_instruction:
 	or ax, cx ; obtain the desired 'X' coordinate
 	mov word [esp + TURTLE_OFFSET_POSITION_X], ax; set the new value of turtle's 'X'
 
-	jmp exit_normal; TEMP DEBUG
+	debug_print 7710
+	debug_print ebx
+
 	jmp read_next_instruction ; finished executing set_position command, read the next instruction
+
+; set direction command decoding
+read_set_direction_command:
+	
+	debug_print 7711
+	debug_print ebx
+	;jmp read_next_instruction ;; TEMP
+
+	; decode the direction 
+	; contents of the register ax :  { - - - - - - - - | 1 1 - - D D - - }
+	and ax, MASK_SET_DIRECTION ; read the correct 2 bits ( ax == DD00)
+	shr ax, 2 ; ax == DD (direction code)
+	mov word [esp + TURTLE_OFFSET_DIRECTION], ax; rotate the turtle accordingly
+
+	jmp read_next_instruction ; finished executing set_direction command, read the next instruction
+
+; MIPS CODE START
+;# set pen state command decoding
+read_set_pen_state_command:
+	
+	debug_print 7701
+	debug_print ebx
+	;jmp read_next_instruction ;; TEMP
+
+	; contents of the register ax :  { - - - - - - - - | 0 1 - A - C C C }
+	; decode pen "altitude" (whether it is raised or lowered)
+	mov ecx, eax ; copy the word since it will be needed later
+	and cx, MASK_PEN_IS_UP ; cx == 000A0000
+	shr cx, 4 ; now cx is either == 1 or == 0 (in the correct form for set_pen_state)
+	mov word [esp + TURTLE_OFFSET_PEN_STATE], cx; apply pen_state
+	; decode the pen color
+	and ax, MASK_PEN_COLOR ; ax == 00000CCC
+	cmp ax, 7
+	je read_pen_state_decoded_white
+	cmp ax, 6
+	je read_pen_state_decoded_red
+	cmp ax, 5
+	je read_pen_state_decoded_green
+	cmp ax, 4
+	je read_pen_state_decoded_blue
+	cmp ax, 3
+	je read_pen_state_decoded_yellow
+	cmp ax, 2
+	je read_pen_state_decoded_cyan
+	cmp ax, 1
+	je read_pen_state_decoded_purple
+	; none of the options were hit, so ax contains 000 - black
+	mov eax, 0x00000000 ; set color to black
+read_set_pen_state_apply: ; color has been saved to ax, execute the color change
+	mov dword [esp + TURTLE_OFFSET_PEN_COLOR], eax; apply pen_color
+	debug_print eax
+	jmp read_next_instruction ; finished executing set_pen_state command, read the next instruction
+		; set pen state : color decoding
+read_pen_state_decoded_white:
+	mov eax, 0x00FFFFFF
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_red:
+	mov eax, 0x00FF0000
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_green:
+	mov eax, 0x0000FF00
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_blue:
+	mov eax, 0x000000FF
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_yellow:
+	mov eax, 0x00FFFF00
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_cyan:
+	mov eax, 0x0000FFFF
+	jmp read_set_pen_state_apply
+read_pen_state_decoded_purple:
+	mov eax, 0x00B803FF
+	jmp read_set_pen_state_apply	
+
+;# move command decoding
+read_move_command: ;# the register's contents: { (16 irrelevant ("-") bits) | m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
+	
+	debug_print 7700
+	debug_print ebx
+
+	jmp read_next_instruction ;; TEMP
+;		   # and we need to provide the move distance in the form: { (22 zeros) m9 m8 | m7 m6 m5 m4 m3 m2 m1 m0 }
+;	and $t0, $s6, MASK_MOVE_DISTANCE_6MSB # retrieve the 6 most significant bits
+;	sll $t0, $t0, 4 # move the 6 most significant bits to their appropriate positions ("make space" for the remaining 4 bits)
+;	and $a0, $s6, MASK_MOVE_DISTANCE_4LSB # retrieve the 4 least significant bits
+;	srl $a0, $a0, 12 # move the 4 least significant bits to the appropriate spot ("get ready to fill in the space made 2 lines earlier")
+;	or $a0, $a0, $t0 # obtain the desired move distance and store it as the correct argument for the move_turtle function
+;	jal move_turtle
+;	j read_next_instruction # finished executing move_turtle command, read the next instruction
+; MIPS CODE END
+
 
 ; DEBUG CODE AHEAD
 	jmp exit_normal ; comment out to start debug
@@ -230,7 +320,6 @@ epilogue:
 	mov ebx, 0; make sure that the register is fully zeroed
 	
 	pop bx
-	debug_print ebx
 	mov word [esi + 7], bx; store turtle's position_x
 
 	pop bx
@@ -263,13 +352,3 @@ exit_normal:
 exit_request_full_set_position_command:
 	mov ecx, -1; '-1' means "incomplete set_position command detected, please provide both words at the same time"
 	jmp epilogue
-
-
-
-; reading commands
-read_set_direction_command:
-	; decode the direction 
-	;and $a0, $s6, MASK_SET_DIRECTION ; read the correct 2 bits ( $a0 == DD00)
-	;srl $a0, $a0, 2 ; $a0 == DD (direction code)
-	;jal set_direction ; rotate the turtle accordingly	
-	jmp read_next_instruction ; finished executing set_direction command, read the next instruction
