@@ -4,6 +4,16 @@
 
 //extern "C" int turtle(unsigned int dest_bitmap, unsigned int commands, unsigned int commands_size); // "C" - signifies to not mangle the function name
 
+void DebugPrintCharArrayAsInt(unsigned char* charArray, int length)
+{
+	std::cout << "Char array as ints: ";
+	for (int i = 0; i < length; i++)
+	{
+		std::cout << (int)charArray[i] << " ";
+	}
+}
+
+
 int main()
 {
 	bool reachedEndOfFile = false;
@@ -29,10 +39,14 @@ int main()
 			std::cout << "\n";
 
 			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
+			DebugPrintCharArrayAsInt(turtle_attributes, constants::TURTLE_ATTRIBUTES_SIZE);
+			
+
 			std::cout << "Turtle starting:\n";
 			int turtleResult = turtle(destinationBitmap, commands, commandsSize, turtle_attributes);
 			std::cout << "Turtle finishing with result: " << turtleResult << "\n";
 			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
+			DebugPrintCharArrayAsInt(turtle_attributes, constants::TURTLE_ATTRIBUTES_SIZE);
 
 			if (turtleResult == -1) // detected a two-word command that was cut in half
 			{
