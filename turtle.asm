@@ -4,13 +4,6 @@
 ;-------------------------------------------------------------------------------
 
 SECTION .DATA
-; turtle attributes ; location on the stack (after the start of the function)
-;	position_x: dd 0
-;	position_y db 0
-;	direction db 0
-;	pen_color dd 0x00RRGGBB
-;	pen_state db 0
-
 
 ; TEMP DEBUG PRINT
     printf_format: db "Result: %d",0xA,0 ; debug code
@@ -75,7 +68,7 @@ turtle:
 ;	save the caller's frame pointer
 	push ebp
 	mov ebp, esp
-	push ebx ; proably will be using this so it should be preserved
+	push ebx ; will be using those so they should be preserved
 	push esi
 
 ;	load and store the turtle parameters on the stack (for faster access)
@@ -172,8 +165,7 @@ read_set_direction_command:
 
 	jmp read_next_instruction ; finished executing set_direction command, read the next instruction
 
-; MIPS CODE START
-;# set pen state command decoding
+; set pen state command decoding
 read_set_pen_state_command:
 	
 	debug_print 7701
@@ -231,23 +223,29 @@ read_pen_state_decoded_purple:
 	mov eax, 0x00B803FF
 	jmp read_set_pen_state_apply	
 
-;# move command decoding
-read_move_command: ;# the register's contents: { (16 irrelevant ("-") bits) | m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
+; move command decoding
+read_move_command: 
 	
 	debug_print 7700
 	debug_print ebx
 
-	jmp read_next_instruction ;; TEMP
-;		   # and we need to provide the move distance in the form: { (22 zeros) m9 m8 | m7 m6 m5 m4 m3 m2 m1 m0 }
-;	and $t0, $s6, MASK_MOVE_DISTANCE_6MSB # retrieve the 6 most significant bits
-;	sll $t0, $t0, 4 # move the 6 most significant bits to their appropriate positions ("make space" for the remaining 4 bits)
-;	and $a0, $s6, MASK_MOVE_DISTANCE_4LSB # retrieve the 4 least significant bits
-;	srl $a0, $a0, 12 # move the 4 least significant bits to the appropriate spot ("get ready to fill in the space made 2 lines earlier")
-;	or $a0, $a0, $t0 # obtain the desired move distance and store it as the correct argument for the move_turtle function
-;	jal move_turtle
-;	j read_next_instruction # finished executing move_turtle command, read the next instruction
-; MIPS CODE END
+	;jmp read_next_instruction ;; TEMP
+		; ax register's contents: { m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
+		; and we need to provide the move distance in the form: { (22 zeros) m9 m8 | m7 m6 m5 m4 m3 m2 m1 m0 }
+	mov ecx, eax; make a copy of the word (we will again need it soon)
+	and ax, MASK_MOVE_DISTANCE_6MSB ; retrieve the 6 most significant bits
+	shl ax, 4 ; move the 6 most significant bits to their appropriate positions ("make space" for the remaining 4 bits)
+	and cx, MASK_MOVE_DISTANCE_4LSB ; retrieve the 4 least significant bits
+	shr cx, 12 ; move the 4 least significant bits to the appropriate spot ("get ready to fill in the space made 2 lines earlier")
+	or cx, ax ; obtain the desired move distance and store it as the correct argument for the move_turtle function
+	push ecx; prepare the turtle's movement distance argument (2nd)
+	mov ecx, esp; prepare the turtle's current attributes pointer
+	add ecx, TURTLE_OFFSET_POSITION_X - 4; obtain the attributes' adress
+	push ecx; push the turtle's attributes pointer
+	call move_turtle ; execute the movement
+	add esp, 2*4; clear the stack (remove the pushed parameters)
 
+	jmp read_next_instruction ; finished executing move_turtle command, read the next instruction
 
 ; DEBUG CODE AHEAD
 	jmp exit_normal ; comment out to start debug
@@ -352,3 +350,191 @@ exit_normal:
 exit_request_full_set_position_command:
 	mov ecx, -1; '-1' means "incomplete set_position command detected, please provide both words at the same time"
 	jmp epilogue
+
+
+; ======== Turtle Manipulation : move the turtle ========
+move_turtle:
+;description: 
+;	moves the turtle by 'distance' number of pixels in a specified direction, if the turtle would leave the image, it will go as far as it can without leaving the image
+;arguments: 'size of reccomended register to load', adress as after the prologue)
+;	'dword', (esp + 8) 2nd - distance
+;	'dword', (esp + 4) 1st - pointer to current turtle's state (x86 attributes) 
+; turtle attributes (add the "OFFSET" to the 1st argument value to obtain):
+;	'word', TURTLE_OFFSET_POSITION_X - x coordinate (if direction is left or right)
+;	'byte', TURTLE_OFFSET_POSITION_Y - y coordinate (if direction is up or down)
+;	'byte', TURTLE_OFFSET_DIRECTION - direction (00 - up, 01 - left, 10 - down, 11 - right, other should not happen: we always read only 2 bits in the set direction command)
+;	'byte', TURTLE_OFFSET_PEN_STATE - pen state (0 - lowered, 1 - raised)
+;	'byte', TURTLE_OFFSET_PEN_COLOR - color (if pen is lowered then will leave a trail in this color)
+
+;return value: none
+	; prologue
+	; save the caller's frame pointer
+	push ebp
+	mov ebp, esp
+	push ebx; will be using these registers, so need to preserve them
+	push esi
+	
+	; get the direction
+	mov esi, [esp + 4]; get the adress of turtle attributes
+	mov ebx, 0
+	mov bl, [esi + TURTLE_OFFSET_DIRECTION]; read the turtle's direction
+	; decode the direction
+	mov ecx, ebx; copy the direction code
+	and cl, 1 ; read the least significant bit of the direction code
+	cmp cl, 0
+	je move_decode_vertical_movement ; turtle is supposed to move vertically, decide whether up ot down
+	;(otherwise) turtle is supposed to move horizontally, decide whether left or right
+move_decode_horizontal_movement:
+	mov cx, [esi + TURTLE_OFFSET_POSITION_X] ; get the turtle's 'x' coordinate
+	push ecx ; supply the turtle's 'x' coordinate for destination calculation (since we know we will be moving horizontally)
+	mov ecx, [esp + 12]; get the distance to move
+	push ecx; supply the get_[positive/negative]_move_destination with the 'distance' argument
+	cmp bl, 1
+	je move_left ; if direction == 01 , then we move left, otherwise we move right
+move_right:	; move right
+	mov ecx, IMAGE_WIDTH - 1; 
+	push ecx; provide IMAGE_WIDTH - 1 as the "edge coordinate"
+	call get_positive_move_destination
+	; move to the incrementing loop
+	beqz $s4 , move_right_loop ; if pen is lowered, then we need to paint all pixels on the path
+	; the pen is raised => we can just "teleport" to the target position
+	move $s0, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
+	j move_finish
+move_right_loop:
+	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	beq $s0, $v0, move_finish
+	addiu $s0, $s0, 1
+	j move_right_loop
+	
+move_left:	; move downwards
+	; $a0 - distance to move has already been supplied when the "move" function was called
+	jal get_negative_move_destination
+	; move to the decrementing loop		
+	beqz $s4 , move_left_loop ; if pen is lowered, then we need to paint all pixels on the path
+	; the pen is raised => we can just "teleport" to the target position
+	move $s0, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
+	j move_finish
+move_left_loop:
+	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	beq $s0, $v0, move_finish
+	subiu $s0, $s0, 1
+	j move_left_loop
+	
+	; turtle is supposed to move vertically, decide whether up or down
+move_decode_vertical_movement: 
+	move $a1, $s1 ; supply the turtle's 'y' coordinate for destination calculation (since we know we will be moving vertically)
+	beqz $s2, move_up ; if direction == 00 => move up, otherwise move down
+move_down:	; move downwards
+	; $a0 - distance to move has already been supplied when the "move" function was called
+	jal get_negative_move_destination
+	; move to the decrementing loop	
+	beqz $s4 , move_down_loop ; if pen is lowered, then we need to paint all pixels on the path
+	; the pen is raised => we can just "teleport" to the target position
+	move $s1, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
+	j move_finish
+move_down_loop:
+	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	beq $s1, $v0, move_finish
+	subiu $s1, $s1, 1
+	j move_down_loop
+	
+move_up:	; move upwards
+	; $a0 - distance to move has already been supplied when the "move" function was called
+	li $a2, 49 ; provide IMAGE_HEIGHT-1 as the "edge coordinate" >> if we were supporting non-fixed image sizes I would just li $a2, IMAGE _HEIGHT and then subtract 1 || OR || just store the needed value in static memory (depending on whether memory or speed optimization is needed)
+	jal get_positive_move_destination
+	; move to the incrementing loop	
+	beqz $s4 , move_up_loop ; if pen is lowered, then we need to paint all pixels on the path
+	; the pen is raised => we can just "teleport" to the target position
+	move $s1, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
+	j move_finish
+move_up_loop:
+	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	beq $s1, $v0, move_finish
+	addiu $s1, $s1, 1
+	j move_up_loop
+	
+move_finish:	; epilogue (exit the function)		
+	pop esi; restore non-volatile the registers
+	pop ebx
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller
+
+
+# ======== Tool: Calculate negative movement destination ========
+get_negative_move_destination:
+#description: 
+#	returns clamped destination position (if turtle requests a destination off the image, will return 0 - position at the edge
+#arguments:
+#	$a0 - distance to move in the negative direction
+#	$a1 - starting position on an axis (pass here the current coordinate of the turtle)
+#return value:
+#	eax - the final, valid destination coordinate
+	; prologue
+	; save the caller's frame pointer
+	push ebp
+	mov ebp, esp
+	# try to move exactly as instructions say
+	subu $v0, $a1, $a0
+	bleu $v0, $a1, get_negative_move_destination_finish # no overflow happened: we can return the calculated destination
+	# overflow happened: tutrle tries to move off the image
+	li $v0, 0 # return 0 (turtle stops at the bottom/left edge of the image)
+get_negative_move_destination_finish:	# epilogue (exit the function)				
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller
+
+# ======== Tool: Calculate positive movement destination ========
+get_positive_move_destination:
+#description: 
+#	returns clamped destination position (if turtle requests a destination off the image, will return $a2 - position at the edge
+#arguments:
+#	$a0 - distance to move in the positive direction
+#	$a1 - starting position on an axis (pass here the current coordinate of the turtle)
+#	$a2 - greatest valid coordinate in an axis (the "edge" of the image)
+#return value:
+#	eax - the final, valid destination coordinate
+	; prologue
+	; save the caller's frame pointer
+	push ebp
+	mov ebp, esp
+	# try to move exactly as instructions say
+	addu $v0, $a1, $a0
+	# check if target coordinate is valid
+	bgtu $v0, $a2, get_positive_move_destination_fix # turtle tries to move off the image	
+	bleu $v0, $a1, get_positive_move_destination_fix # turtle tries to move off the image so much that an overflow happened
+	# turtle tries to move to a valid spot: simply allow it to do so
+get_positive_move_destination_finish:	# epilogue (exit the function)				
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller
+get_positive_move_destination_fix:
+	move $v0, $a2	
+	j get_positive_move_destination_finish
+	
+; ======== Tool: return smaller value ========
+min:
+;description: 
+;	returns the smaller argument's value (both arguments and output are expected to be unsigned)
+;arguments:
+;	esp + 8 - 1st value to compare
+;	esp + 4 - 2nd value to compare
+;return value:
+;	eax - the value of the smaller argument
+	; prologue
+	; save the caller's frame pointer
+	push ebp
+	mov ebp, esp
+	;compare the arguments
+	mov eax, [esp + 8]
+	mov ecx, [esp + 4]
+	cmp eax, ecx
+	jg min_2nd_smaller
+	; eax is is the smaller than (or equal) ecx : do nothing (we will just return eax)
+	j min_finish
+min_2nd_smaller:
+	mov eax, ecx; ecx is smaller so we will return it
+min_finish:	; epilogue (exit the function)				
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller
