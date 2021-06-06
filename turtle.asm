@@ -9,7 +9,7 @@ SECTION .DATA
     printf_format: db "Result: %d",0xA,0 ; debug code
 	extern printf
 
-%macro debug_print 1
+%macro debug_log 1
 	pushad; store all registers (so they do not get spoiled by the printf)
 	push dword %1 ; 2nd printf argument
 	push dword printf_format ; 1st printf argument
@@ -51,7 +51,7 @@ MASK_SET_POSITION_X2LSB equ 49152 ; 9th and 10th bits of the second word encode 
 MASK_SET_DIRECTION equ 12 ; 5th and 6th bit of the "set command" word encode the direction, so we need 00000000 00001100 mask to read them (since when loading the word from the file we get B1 B0)
 MASK_PEN_IS_UP equ 16 ; 4th bit of the "set pen state" word tells whether the pen in raised or lowered, so we need 00000000 00010000 mask to read it (since when loading the word from the file we get B1 B0)
 MASK_PEN_COLOR equ 7; 6th,7th and 8th bits of the "set pen state" word encode color, so we need 00000000 00000111 mask to read them (since when loading the word from the file we get B1 B0)
-MASK_MOVE_DISTANCE_6MSB equ 63 ; 3rd, 4th, 5th, 6th, 7th and 8th encode the 6 most significant bits of the move distance, so we need 00000000 00111111 mask to read them (since when loading the word from the file we get B1 B0 into the register) ;Yes, I am "defining" '77' twice, but that is for the better readability in the "logic part" of the code
+MASK_MOVE_DISTANCE_6MSB equ 63 ; 3rd, 4th, 5th, 6th, 7th and 8th encode the 6 most significant bits of the move distance, so we need 00000000 00111111 mask to read them (since when loading the word from the file we get B1 B0 into the register) ;Yes, I am "defining" '63' twice, but that is for the better readability in the "logic part" of the code
 MASK_MOVE_DISTANCE_4LSB equ 61440 ; 9th, 10th, 11th and 12th bits encode the 4 least significant bits of the value to move, so we need 11110000 00000000 to read them (they are on more significant positions in the register since the register is filled in the B1 B0 order)
 
 SECTION .TEXT
@@ -90,6 +90,13 @@ turtle:
 	mov bx, [esi + 7]; load turtle's position_x
 	push bx;	in the end, it is located at [esp] / [esp + TURTLE_OFFSET_POSITION_X]
 
+	mov ebx, esp
+	;debug_log ebx ; log turtle attributes pointer
+
+	mov ebx, esp
+	add ebx, ARGUMENT_OFFSET_dest_bitmap
+	;debug_log ebx ; log bitmap pointer
+
 ;	execute the given batch of commands
 
 	mov ebx, 0; start reading from the beginning of the commands
@@ -102,8 +109,8 @@ read_next_instruction:
 	; if we have not read all instructions: decode the instruction
 
 	mov esi, [esp + ARGUMENT_OFFSET_commands]; get pointer to the commands
-	;debug_print esi
-	;debug_print ebx
+	;debug_log esi
+	;debug_log ebx
 	mov ax, 0
 	mov ax, [esi + ebx - 2]; load the command word (-2 to account for the checking of availability of 2 bytes - a full word)
 	mov ecx, eax; copy the commad word so we can decode it
@@ -145,16 +152,16 @@ read_next_instruction:
 	or ax, cx ; obtain the desired 'X' coordinate
 	mov word [esp + TURTLE_OFFSET_POSITION_X], ax; set the new value of turtle's 'X'
 
-	debug_print 7710
-	debug_print ebx
+	;debug_log 7710
+	;debug_log ebx
 
 	jmp read_next_instruction ; finished executing set_position command, read the next instruction
 
 ; set direction command decoding
 read_set_direction_command:
 	
-	debug_print 7711
-	debug_print ebx
+	;debug_log 7711
+	;debug_log ebx
 	;jmp read_next_instruction ;; TEMP
 
 	; decode the direction 
@@ -162,14 +169,13 @@ read_set_direction_command:
 	and ax, MASK_SET_DIRECTION ; read the correct 2 bits ( ax == DD00)
 	shr ax, 2 ; ax == DD (direction code)
 	mov word [esp + TURTLE_OFFSET_DIRECTION], ax; rotate the turtle accordingly
-
 	jmp read_next_instruction ; finished executing set_direction command, read the next instruction
 
 ; set pen state command decoding
 read_set_pen_state_command:
 	
-	debug_print 7701
-	debug_print ebx
+	;debug_log 7701
+	;debug_log ebx
 	;jmp read_next_instruction ;; TEMP
 
 	; contents of the register ax :  { - - - - - - - - | 0 1 - A - C C C }
@@ -198,7 +204,6 @@ read_set_pen_state_command:
 	mov eax, 0x00000000 ; set color to black
 read_set_pen_state_apply: ; color has been saved to ax, execute the color change
 	mov dword [esp + TURTLE_OFFSET_PEN_COLOR], eax; apply pen_color
-	debug_print eax
 	jmp read_next_instruction ; finished executing set_pen_state command, read the next instruction
 		; set pen state : color decoding
 read_pen_state_decoded_white:
@@ -226,8 +231,8 @@ read_pen_state_decoded_purple:
 ; move command decoding
 read_move_command: 
 	
-	debug_print 7700
-	debug_print ebx
+	;debug_log 7700
+	;debug_log ebx
 
 	;jmp read_next_instruction ;; TEMP
 		; ax register's contents: { m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
@@ -240,13 +245,19 @@ read_move_command:
 	or cx, ax ; obtain the desired move distance and store it as the correct argument for the move_turtle function
 	push ecx; prepare the turtle's movement distance argument (3nd)
 	
-	mov ecx, esp; prepare the turtle's current attributes pointer
-	add ecx, TURTLE_OFFSET_POSITION_X - 4; obtain the attributes' adress
+	;debug_log ecx; log distance that was pushed
+
+	mov ecx, ebp; prepare the turtle's current attributes pointer
+	add ecx, TURTLE_OFFSET_POSITION_X - TURTLE_ATTRIBUTES_SIZE - PRESERVED_REGISTERS_SIZE; obtain the attributes' adress
 	push ecx; push the turtle's attributes pointer (2nd argument)
 	
+	;debug_log ecx; log attribute pointer that was pushed
+
 	mov ecx, esp; prepare the bitmap pointer
-	add ecx, ARGUMENT_OFFSET_dest_bitmap - 8; obtain the bitmap's adress
+	add ecx, ARGUMENT_OFFSET_dest_bitmap + 8; obtain the bitmap's adress
 	push ecx; push the bitmap pointer (1st argument)
+
+	;debug_log ecx; log bitmap pointer
 
 	call move_turtle ; execute the movement
 	add esp, 3*4; clear the stack (remove the pushed parameters)
@@ -258,45 +269,45 @@ read_move_command:
 	; TEMP : CHANGE PEN COLOR BY 1
 
 	mov ebx, [esp + TURTLE_OFFSET_PEN_COLOR]; read the pen_color
-	debug_print ebx
+	debug_log ebx
 	add ebx, 1; increment pen_color
-	debug_print ebx
+	debug_log ebx
 	mov dword [esp + TURTLE_OFFSET_PEN_COLOR], ebx; apply the change to pen_color
 
 	; TEMP : CHANGE PEN STATE BY 2
 
 	mov ebx, 0
 	mov bx, [esp + TURTLE_OFFSET_PEN_STATE]; read the pen_color
-	debug_print ebx
+	debug_log ebx
 	add bx, 2; increment pen_state
-	debug_print ebx
+	debug_log ebx
 	mov word [esp + TURTLE_OFFSET_PEN_STATE], bx; apply the change to pen_color
 
 	; TEMP : CHANGE DIRECTION BY 3
 
 	mov ebx, 0
 	mov bx, [esp + TURTLE_OFFSET_DIRECTION]; read the pen_color
-	debug_print ebx
+	debug_log ebx
 	add bx, 3; increment pen_state
-	debug_print ebx
+	debug_log ebx
 	mov word [esp + TURTLE_OFFSET_DIRECTION], bx; apply the change to pen_color
 
 	; TEMP : CHANGE Y POSITION BY 4
 
 	mov ebx, 0
 	mov bx, [esp + TURTLE_OFFSET_POSITION_Y]; read the pen_color
-	debug_print ebx
+	debug_log ebx
 	add bx, 4; increment pen_state
-	debug_print ebx
+	debug_log ebx
 	mov word [esp + TURTLE_OFFSET_POSITION_Y], bx; apply the change to pen_color
 
 	; TEMP : CHANGE X POSITION BY 5
 
 	mov ebx, 0
 	mov bx, [esp + TURTLE_OFFSET_POSITION_X]; read the pen_color
-	debug_print ebx
+	debug_log ebx
 	add bx, 5; increment pen_state
-	debug_print ebx
+	debug_log ebx
 	mov word [esp + TURTLE_OFFSET_POSITION_X], bx; apply the change to pen_color
 
 ; random temporary stuff
@@ -363,9 +374,9 @@ move_turtle:
 ;description: 
 ;	moves the turtle by 'distance' number of pixels in a specified direction, if the turtle would leave the image, it will go as far as it can without leaving the image
 ;arguments: 'size of reccomended register to load', adress as after the prologue)
-;	'dword', (ebp + 12) 3rd - distance
-;	'dword', (ebp + 8) 2nd - pointer to current turtle's state (x86 attributes)
-;	'dword', (ebp + 4) 1st - pointer to bitmap (turtle() argument) 
+;	'dword', (ebp + 16) 3rd - distance
+;	'dword', (ebp + 12) 2nd - pointer to current turtle's state (x86 attributes)
+;	'dword', (ebp + 8) 1st - pointer to bitmap (turtle() argument) 
 ; turtle attributes (add the "OFFSET" to the 1st argument value to obtain):
 ;	'word', TURTLE_OFFSET_POSITION_X - x coordinate (if direction is left or right)
 ;	'byte', TURTLE_OFFSET_POSITION_Y - y coordinate (if direction is up or down)
@@ -380,11 +391,12 @@ move_turtle:
 	mov ebp, esp
 	push ebx; will be using these registers, so need to preserve them
 	push esi
-	
+
 	; get the direction
-	mov esi, [ebp + 8]; get the adress of turtle attributes
+	mov esi, [ebp + 12]; get the adress of turtle attributes
 	mov ebx, 0
 	mov bl, [esi + TURTLE_OFFSET_DIRECTION]; read the turtle's direction
+
 	; decode the direction
 	mov ecx, ebx; copy the direction code
 	and cl, 1 ; read the least significant bit of the direction code
@@ -392,41 +404,76 @@ move_turtle:
 	je move_decode_vertical_movement ; turtle is supposed to move vertically, decide whether up ot down
 	;(otherwise) turtle is supposed to move horizontally, decide whether left or right
 move_decode_horizontal_movement:
-	mov cx, [esi + TURTLE_OFFSET_POSITION_X] ; get the turtle's 'x' coordinate
-	push ecx ; supply the turtle's 'x' coordinate for destination calculation (since we know we will be moving horizontally)
 	mov ecx, [ebp + 16]; get the distance to move
 	push ecx; supply the get_[positive/negative]_move_destination with the 'distance' argument
+	mov cx, [esi + TURTLE_OFFSET_POSITION_X] ; get the turtle's 'x' coordinate
+	push ecx ; supply the turtle's 'x' coordinate for destination calculation (since we know we will be moving horizontally)
 	cmp bl, 1
 	je move_left ; if direction == 01 , then we move left, otherwise we move right
 move_right:	; move right
+	
+	debug_log 77001
+
 	mov ecx, IMAGE_WIDTH - 1; 
 	push ecx; provide IMAGE_WIDTH - 1 as the "edge coordinate"
 	call get_positive_move_destination
-	add esp, 2*4; clear the stack
+	add esp, 3*4; clear the stack
+
+	;jmp move_finish
+
 	; move to the incrementing loop
-;	beqz $s4 , move_right_loop ; if pen is lowered, then we need to paint all pixels on the path
+	mov ecx, [esi + TURTLE_OFFSET_PEN_STATE]
+	cmp ecx, 0
+	je move_right_loop_start ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
-;	move $s0, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
-;	j move_finish
-move_right_loop:
-;	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
-;	beq $s0, $v0, move_finish
-;	addiu $s0, $s0, 1
-;	j move_right_loop
-	
-move_left:	; move downwards
-	; $a0 - distance to move has already been supplied when the "move" function was called
-;	jal get_negative_move_destination
-	; move to the decrementing loop		
-;	beqz $s4 , move_left_loop ; if pen is lowered, then we need to paint all pixels on the path
-	; the pen is raised => we can just "teleport" to the target position
-;	move $s0, $v0 ; we can just set the x coordinate (no need to call set_position since y will not change)
+	mov [esi + TURTLE_OFFSET_POSITION_X], eax  ; we can just set the x coordinate (no need to call set_position since y will not change)
 	jmp move_finish
+
+move_right_loop_start:
+	; prepare arguments for 'paint_current_position' (arguments in registers because this will speed up execution significantly + it is a leaf function)
+	; esi already contains the pointer to attributes
+	mov ebx, [ebp + 8] ; prepare the pointer to bitmap
+move_right_loop:
+	;call paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	mov ecx, [esi + TURTLE_OFFSET_POSITION_X]; get the current 'x' position
+	cmp ecx, eax
+	jge move_finish ; if we have arrived at the target position : exit the loop
+	add ecx, 1; get the next coordinate to move to
+	mov [esi + TURTLE_OFFSET_POSITION_X], ecx ; actually move to that coordinate
+	jmp move_right_loop
+	
+move_left:	; move left
+	debug_log 77003
+	; the distance and turtle's position have already been provided: just get the move destination
+	call get_negative_move_destination
+	add esp, 2*4; clear the stack
+
+	debug_log eax;
+
+	;jmp move_finish
+
+	mov ecx, [esi + TURTLE_OFFSET_PEN_STATE]
+	cmp ecx, 0
+	je move_left_loop_start ; if pen is lowered, then we need to paint all pixels on the path
+	; the pen is raised => we can just "teleport" to the target position
+	mov [esi + TURTLE_OFFSET_POSITION_X], eax  ; we can just set the x coordinate (no need to call set_position since y will not change)
+	jmp move_finish
+
+move_left_loop_start:
+	; prepare arguments for 'paint_current_position' (arguments in registers because this will speed up execution significantly + it is a leaf function)
+	; esi already contains the pointer to attributes
+	mov ebx, [ebp + 8] ; prepare the pointer to bitmap
 move_left_loop:
-;	jal paint_current_position ; we have just "arrived" at this current position, so we should paint it.
-;	beq $s0, $v0, move_finish
-;	subiu $s0, $s0, 1
-;	jmp move_left_loop
+	;call paint_current_position ; we have just "arrived" at this current position, so we should paint it.
+	mov ecx, [esi + TURTLE_OFFSET_POSITION_X]; get the current 'x' position
+		
+	debug_log ecx; print current position
+
+	cmp ecx, eax
+	jle move_finish ; if we have arrived at the target position : exit the loop
+	sub ecx, 1; get the next coordinate to move to
+	mov [esi + TURTLE_OFFSET_POSITION_X], ecx ; actually move to that coordinate
+	jmp move_left_loop
 	
 	; turtle is supposed to move vertically, decide whether up or down
 move_decode_vertical_movement: 
@@ -462,8 +509,13 @@ move_up_loop:
 ;	j move_up_loop
 	
 move_finish:	; epilogue (exit the function)		
+
+	mov ecx, [esi + TURTLE_OFFSET_POSITION_X]
+	debug_log ecx
+
 	pop esi; restore non-volatile the registers
 	pop ebx
+	;debug_log ebx
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller
@@ -482,6 +534,12 @@ get_negative_move_destination:
 	; save the caller's frame pointer
 	push ebp
 	mov ebp, esp
+
+	mov eax, [esp + 12]
+	debug_log eax;
+	mov eax, [esp + 8]
+	debug_log eax;
+
 	; try to move exactly as instructions say
 	mov eax, [esp + 8]
 	sub eax, [esp + 12]
@@ -489,7 +547,7 @@ get_negative_move_destination:
 	jo get_negative_move_destination_fix ; no overflow happened: we can return the calculated destination
 	jc get_negative_move_destination_fix ; no carry happened: we can return the calculated destination
 	; no overflow happened: turtle tries to move to a valid coordinate
-get_negative_move_destination_finish:	; epilogue (exit the function)				
+get_negative_move_destination_finish:	; epilogue (exit the function)		
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller (eax contains the valid target coordinate value)
@@ -513,8 +571,11 @@ get_positive_move_destination:
 	mov ebp, esp
 
 	mov eax, [esp + 16]
+	debug_log eax;
 	mov eax, [esp + 12]
+	debug_log eax;
 	mov eax, [esp + 8]
+	debug_log eax;
 
 	; try to move exactly as instructions say
 	mov eax, [esp + 12]; load the starting position
@@ -558,3 +619,45 @@ min_finish:	; epilogue (exit the function)
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller
+
+paint_current_position:
+;description: 
+;	sets the color of specified pixel
+;	should be called only if the pen is lowered
+;arguments:
+;	esi - pointer to turtle attributes
+;	ebx - pointer to bitmap
+;read turtle attributes:
+;	$s0 - x coordinate
+;	$s1 - y coordinate - (0,0) - bottom left corner
+;	$s2 - 0x00RRGGBB - pixel color
+;return value: none
+	; prologue (save the caller's frame pointer)
+	push ebp
+	mov ebp, esp
+
+;	la $t1, image + 10	#adress of file offset to pixel array
+;	lw $t2, ($t1)		#file offset to pixel array in $t2
+;	la $t1, image		#adress of bitmap
+;	add $t2, $t1, $t2	#obtain adress of pixel array in $t2
+	
+	; pixel address calculation
+;	mul $t1, $s1, BYTES_PER_ROW #t1= y*BYTES_PER_ROW
+;	move $t3, $s0		
+;	sll $t0, $s0, 1		#$t3= 2*x
+;	add $t3, $t3, $t0	#$t3= 3*x = (2x + x)
+;	add $t1, $t1, $t3	#$t1 = 3x + y*BYTES_PER_ROW
+;	add $t2, $t2, $t1	#pixel address 
+	
+	; set new color
+;	move $t0, $s3 		#load the pen color
+;	sb $t0, ($t2)		#store B
+;	srl $t0, $t0,8
+;	sb $t0, 1($t2)		#store G
+;	srl $t0, $t0,8
+;	sb $t0, 2($t2)		#store R
+	; epilogue (exit the function)				
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller
+	
