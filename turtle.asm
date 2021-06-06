@@ -1,6 +1,6 @@
 ;-------------------------------------------------------------------------------
 ;	author: Gabriel Skowron-Rodriguez
-;	description : My x86 32bit implementation of project 6.20 "Binary turtle graphics - version 6"
+;	description : The x86 (32bit) part of my implementation of project 6.20 "Binary turtle graphics - version 6"
 ;-------------------------------------------------------------------------------
 
 SECTION .DATA
@@ -102,7 +102,7 @@ turtle:
 read_next_instruction:	
 	add ebx, 2;
 	mov eax, [esp + ARGUMENT_OFFSET_commands_size] ; read commands_size
-	cmp ebx, eax ; check if we have finished reading
+	cmp ebx, eax ; check if we have finished reading (if the commands_size is odd, will ignore the last byte)
 	jg exit_normal ; we have successfully finished processing the batch of instructions: return control to the caller
 
 	; if we have not read all instructions: decode the instruction
@@ -356,7 +356,7 @@ exit_normal:
 
 ; request both words of the set_postition command
 exit_request_full_set_position_command:
-	mov ecx, -1; '-1' means "incomplete set_position command detected, please provide both words at the same time"
+	mov ecx, 1; '1' means "incomplete set_position command detected, please provide both words at the same time"
 	jmp epilogue
 
 

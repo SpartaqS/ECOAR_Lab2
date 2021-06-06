@@ -1,21 +1,15 @@
-﻿/* example.c */
-
+﻿/* ------------------------------------------------------------------------------ -
+	author: Gabriel Skowron-Rodriguez
+	description: The C++ part of my implementation of project 6.20 "Binary turtle graphics - version 6"
+   ------------------------------------------------------------------------------ -
+ */
 #include "ECOAR_Lab2.h"
-
-//extern "C" int turtle(unsigned int dest_bitmap, unsigned int commands, unsigned int commands_size); // "C" - signifies to not mangle the function name
-
-void DebugPrintCharArrayAsInt(unsigned char* charArray, int length)
-{
-	std::cout << "Char array as ints: ";
-	for (int i = 0; i < length; i++)
-	{
-		std::cout << (int)charArray[i] << " ";
-	}
-}
-
 
 int main()
 {
+	std::cout << userMessages::PROGRAM_START;
+
+	bool normalExit = true;
 	bool reachedEndOfFile = false;
 
 	unsigned char* destinationBitmap = InitializeDestinationBitmap();
@@ -23,55 +17,69 @@ int main()
 	unsigned char* turtle_attributes = InitializeTurtleAttributes(); // used store the turtle arguments between turtle() calls (non-compressed)
 	int commandsSize = 0;
 	int nextCommandToRead = 0;
-	
+
 	while (!reachedEndOfFile)
 	{
 		commandsSize = ReadInstructions(commands, nextCommandToRead);
 		if (commandsSize > 0)
 		{
 			nextCommandToRead += commandsSize; // so we know where to start reading next time
-			std::cout << "Turtle Commands ( " << commandsSize << " total ) :";
+
+#if DEBUG_MODE == 1
+			std::cout << "Turtle Command Size:  " << commandsSize << " :";
 			for (int i = 0; i < commandsSize; i++)
 			{
 				std::cout << (int)commands[i] << " ";
 			}
-
 			std::cout << "\n";
-
 			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 			DebugPrintCharArrayAsInt(turtle_attributes, constants::TURTLE_ATTRIBUTES_SIZE);
-			
-
 			std::cout << "Turtle starting:\n";
+#endif
 			int turtleResult = turtle(destinationBitmap, commands, commandsSize, turtle_attributes);
+#if DEBUG_MODE == 1
 			std::cout << "Turtle finishing with result: " << turtleResult << "\n";
 			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 			DebugPrintCharArrayAsInt(turtle_attributes, constants::TURTLE_ATTRIBUTES_SIZE);
-
-			if (turtleResult == -1) // detected a two-word command that was cut in half
+#endif
+			if (turtleResult == 1) // detected a two-word command that was cut in half
 			{
-				if (commandsSize > 2 && commandsSize < constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
+				if (commandsSize > 2 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
 				{
+					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_1 << nextCommandToRead + commandsSize << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_2;
 					nextCommandToRead -= 2; // read the severed set_position command as the first one in the next batch of instructions
 				}
 				else
 				{
+					std::cout << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_1 << nextCommandToRead + commandsSize << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_2;
 					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it
 				}
 			}
 		}
-		else
+		else if (commandsSize == 0) // we have reached the end of file
 		{
 			reachedEndOfFile = true;
 		}
+		else // an error happened
+		{
+			reachedEndOfFile = true;
+			normalExit = false;
+		}
 	}
 
-	SaveBMP(destinationBitmap);
-
-	delete destinationBitmap;
-	delete commands;
-	delete turtle_attributes;
-	return 0;
+	if (normalExit)
+	{
+		std::cout << userMessages::FINISHED_DRAWING;
+		SaveBMP(destinationBitmap);
+		std::cout << userMessages::SAVED_TO_FILE << "\"" << constants::OUTPUT_FILE << "\"\n";
+		delete destinationBitmap;
+		delete commands;
+		delete turtle_attributes;
+		std::cout << userMessages::PROGRAM_END;
+		return 0;
+	}
+	std::cout << userMessages::PROGRAM_END;
+	return 1;
 }
 
 unsigned char * InitializeDestinationBitmap()
@@ -128,7 +136,7 @@ void WriteIntToChar(int integerToWrite, unsigned char* targetCharArray, unsigned
 
 int ReadInstructions(unsigned char* commandsBuffer, int whereToStart)
 {
-	std::ifstream inputFile("input.bin", std::ios::in | std::ios::binary);
+	std::ifstream inputFile(constants::INPUT_FILE, std::ios::in | std::ios::binary);
 	if (inputFile.is_open())
 	{
 		int readBytesCount = 0;
@@ -140,16 +148,27 @@ int ReadInstructions(unsigned char* commandsBuffer, int whereToStart)
 
 		return readBytesCount;
 	} // else there was an error when opening the file
-	return 0;
+	std::cout << userMessages::OPEN_FILE_ERROR << "\"" << constants::INPUT_FILE << "\"\n";
+	return -1;
 }
 
 bool SaveBMP(unsigned char* bitmapToSave)
 {
-	std::ofstream outputFile("output.bmp", std::ios::out | std::ios::binary | std::ios::trunc);
+	std::ofstream outputFile(constants::OUTPUT_FILE, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (outputFile.is_open())
 	{
 		outputFile.write((char*)bitmapToSave, constants::BMP_FILE_SIZE);
 		return true;
 	} // else there was an error when creating the file to write
 	return false;
+}
+
+void DebugPrintCharArrayAsInt(unsigned char* charArray, int length)
+{
+	std::cout << "Char array as ints: ";
+	for (int i = 0; i < length; i++)
+	{
+		std::cout << (int)charArray[i] << " ";
+	}
+	std::cout << "\n";
 }
