@@ -94,7 +94,7 @@ turtle:
 	;debug_log ebx ; log turtle attributes pointer
 
 	mov ebx, [esp + ARGUMENT_OFFSET_dest_bitmap]
-	debug_log ebx ; log bitmap pointer
+	;debug_log ebx ; log bitmap pointer
 
 ;	execute the given batch of commands
 
@@ -242,23 +242,16 @@ read_move_command:
 	and cx, MASK_MOVE_DISTANCE_4LSB ; retrieve the 4 least significant bits
 	shr cx, 12 ; move the 4 least significant bits to the appropriate spot ("get ready to fill in the space made 2 lines earlier")
 	or cx, ax ; obtain the desired move distance and store it as the correct argument for the move_turtle function
-	push ecx; prepare the turtle's movement distance argument (3nd)
 	
-	;debug_log ecx; log distance that was pushed
-
+	; calling the movement function
+	push ecx; prepare the turtle's movement distance argument (3nd)
 	mov ecx, ebp; prepare the turtle's current attributes pointer
 	add ecx, TURTLE_OFFSET_POSITION_X - TURTLE_ATTRIBUTES_SIZE - PRESERVED_REGISTERS_SIZE; obtain the attributes' adress
 	push ecx; push the turtle's attributes pointer (2nd argument)
-	
-	;debug_log ecx; log attribute pointer that was pushed
-
 	mov ecx, [esp + ARGUMENT_OFFSET_dest_bitmap + 8]; ; prepare the bitmap pointer 
 	push ecx; push the bitmap pointer (1st argument)
-
-	;debug_log ecx; log bitmap pointer
-
 	call move_turtle ; execute the movement
-	add esp, 3*4; clear the stack (remove the pushed parameters)
+	add esp, 3*4; clear the stack ("deallocate" the parameters)
 
 	jmp read_next_instruction ; finished executing move_turtle command, read the next instruction
 
@@ -412,17 +405,11 @@ move_decode_horizontal_movement:
 	cmp bl, 1
 	je move_left ; if direction == 01 , then we move left, otherwise we move right
 move_right:	; move right
-	
-	debug_log 77001
-
 	mov ecx, IMAGE_WIDTH - 1; 
 	push ecx; provide IMAGE_WIDTH - 1 as the "edge coordinate"
 	call get_positive_move_destination
 	add esp, 3*4; clear the stack
-
-	;jmp move_finish
-
-	; move to the incrementing loop
+	; check if turtle has to leave a trail
 	mov cx, [esi + TURTLE_OFFSET_PEN_STATE]
 	cmp cx, 0
 	je move_right_loop_start ; if pen is lowered, then we need to paint all pixels on the path
@@ -446,15 +433,10 @@ move_right_loop:
 	jmp move_right_loop
 	
 move_left:	; move left
-	debug_log 77003
 	; the distance and turtle's position have already been provided: just get the move destination
 	call get_negative_move_destination
 	add esp, 2*4; clear the stack
-
-	debug_log eax;
-
-	;jmp move_finish
-
+	; check if turtle has to leave a trail
 	mov cx, [esi + TURTLE_OFFSET_PEN_STATE]
 	cmp cx, 0
 	je move_left_loop_start ; if pen is lowered, then we need to paint all pixels on the path
@@ -488,17 +470,11 @@ move_decode_vertical_movement:
 	cmp bl, 2
 	je move_down ; if direction == 10 , then we move down, otherwise we move up
 move_up:	; move up
-	
-	debug_log 77001
-
 	mov ecx, IMAGE_WIDTH - 1; 
 	push ecx; provide IMAGE_WIDTH - 1 as the "edge coordinate"
 	call get_positive_move_destination
 	add esp, 3*4; clear the stack
-
-	;jmp move_finish
-
-	; move to the incrementing loop
+	; check if turtle has to leave a trail
 	mov cx, [esi + TURTLE_OFFSET_PEN_STATE]
 	cmp cx, 0
 	je move_up_loop_start ; if pen is lowered, then we need to paint all pixels on the path
@@ -522,15 +498,10 @@ move_up_loop:
 	jmp move_up_loop
 	
 move_down:	; move down
-	debug_log 77003
 	; the distance and turtle's position have already been provided: just get the move destination
 	call get_negative_move_destination
 	add esp, 2*4; clear the stack
-
-	debug_log eax;
-
-	;jmp move_finish
-
+	; check if turtle has to leave a trail
 	mov cx, [esi + TURTLE_OFFSET_PEN_STATE]
 	cmp cx, 0
 	je move_down_loop_start ; if pen is lowered, then we need to paint all pixels on the path
@@ -557,7 +528,6 @@ move_down_loop:
 move_finish:	; epilogue (exit the function)		
 	pop esi; restore non-volatile the registers
 	pop ebx
-	;debug_log ebx
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller
@@ -576,11 +546,6 @@ get_negative_move_destination:
 	; save the caller's frame pointer
 	push ebp
 	mov ebp, esp
-
-	mov eax, [esp + 12]
-	debug_log eax;
-	mov eax, [esp + 8]
-	debug_log eax;
 
 	; try to move exactly as instructions say
 	mov eax, [esp + 8]
@@ -611,13 +576,6 @@ get_positive_move_destination:
 	; save the caller's frame pointer
 	push ebp
 	mov ebp, esp
-
-	mov eax, [esp + 16]
-	debug_log eax;
-	mov eax, [esp + 12]
-	debug_log eax;
-	mov eax, [esp + 8]
-	debug_log eax;
 
 	; try to move exactly as instructions say
 	mov eax, 0
@@ -684,67 +642,28 @@ paint_current_position:
 	mov ecx, 0
 	mov cx, [esi + TURTLE_OFFSET_POSITION_Y] ; cx = 'Y'
 
-	debug_log 66666666
-
-	debug_log ecx ; TEMP obtain Y
-
 	mov eax, 0
 	mov ax, BYTES_PER_ROW
 	mul ecx ; eax = 'Y' * BYTES_PER_ROW
-	
-	debug_log eax ; TEMP obtain Y * BYTES_PER_ROW
-
 	mov ecx, 0
 	mov cx, [esi + TURTLE_OFFSET_POSITION_X] ; cx = 'X'
-
-	debug_log esi
-	debug_log ecx ; TEMP obtain X
-
 	mov edx, ecx ; edx = 'X'
 	shl ecx, 1 ; ecx = 2 * 'X'
-
-	debug_log ecx ; TEMP obtain X
-
 	add ecx, edx ; ecx = 3 * 'X' = (3 * 'X' + 'X')
-
-	debug_log ecx ; TEMP obtain X
-
 	add eax, ecx ; eax = 3 * 'X' + 'Y' * BYTES_PER_ROW
 
-	debug_log eax ; TEMP obtain X
-
 	mov ecx, [ebx + 10] ; obtain the offset of the pixel array
-
-	debug_log ecx
-
 	add ecx, ebx; obtain the adress of the pixel array
-
-	debug_log ecx
-
 	add eax, ecx; obtain the adress of the pixel	
-	
-	debug_log eax ; TEMP obtain the value of pixel
-
-	debug_log [eax] ; TEMP obtain the value of pixel
-
-	debug_log 77777777
-
 	; set new color
 
 	mov ecx ,[esi + TURTLE_OFFSET_PEN_COLOR]; load the pen color
-
-	debug_log ecx
-
 	mov [eax], cl; store B
-
 	shr ecx, 8 ; prepare G
 	mov [eax+1], cl; store G
-	
 	shr ecx, 8 ; prepare R
 	mov [eax+2], cl; store R
-	
-	debug_log [eax] ; TEMP obtain the value of pixel
-	debug_log 88888888
+
 ;	move $t0, $s3 		#load the pen color
 ;	sb $t0, ($t2)		#store B
 ;	srl $t0, $t0,8
