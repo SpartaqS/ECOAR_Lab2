@@ -229,7 +229,7 @@ read_move_command:
 	debug_print 7700
 	debug_print ebx
 
-	jmp read_next_instruction ;; TEMP
+	;jmp read_next_instruction ;; TEMP
 		; ax register's contents: { m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
 		; and we need to provide the move distance in the form: { (22 zeros) m9 m8 | m7 m6 m5 m4 m3 m2 m1 m0 }
 	mov ecx, eax; make a copy of the word (we will again need it soon)
@@ -238,12 +238,18 @@ read_move_command:
 	and cx, MASK_MOVE_DISTANCE_4LSB ; retrieve the 4 least significant bits
 	shr cx, 12 ; move the 4 least significant bits to the appropriate spot ("get ready to fill in the space made 2 lines earlier")
 	or cx, ax ; obtain the desired move distance and store it as the correct argument for the move_turtle function
-	push ecx; prepare the turtle's movement distance argument (2nd)
+	push ecx; prepare the turtle's movement distance argument (3nd)
+	
 	mov ecx, esp; prepare the turtle's current attributes pointer
 	add ecx, TURTLE_OFFSET_POSITION_X - 4; obtain the attributes' adress
-	push ecx; push the turtle's attributes pointer
+	push ecx; push the turtle's attributes pointer (2nd argument)
+	
+	mov ecx, esp; prepare the bitmap pointer
+	add ecx, ARGUMENT_OFFSET_dest_bitmap - 8; obtain the bitmap's adress
+	push ecx; push the bitmap pointer (1st argument)
+
 	call move_turtle ; execute the movement
-	add esp, 2*4; clear the stack (remove the pushed parameters)
+	add esp, 3*4; clear the stack (remove the pushed parameters)
 
 	jmp read_next_instruction ; finished executing move_turtle command, read the next instruction
 
@@ -357,8 +363,9 @@ move_turtle:
 ;description: 
 ;	moves the turtle by 'distance' number of pixels in a specified direction, if the turtle would leave the image, it will go as far as it can without leaving the image
 ;arguments: 'size of reccomended register to load', adress as after the prologue)
-;	'dword', (esp + 8) 2nd - distance
-;	'dword', (esp + 4) 1st - pointer to current turtle's state (x86 attributes) 
+;	'dword', (ebp + 12) 3rd - distance
+;	'dword', (ebp + 8) 2nd - pointer to current turtle's state (x86 attributes)
+;	'dword', (ebp + 4) 1st - pointer to bitmap (turtle() argument) 
 ; turtle attributes (add the "OFFSET" to the 1st argument value to obtain):
 ;	'word', TURTLE_OFFSET_POSITION_X - x coordinate (if direction is left or right)
 ;	'byte', TURTLE_OFFSET_POSITION_Y - y coordinate (if direction is up or down)
@@ -375,7 +382,7 @@ move_turtle:
 	push esi
 	
 	; get the direction
-	mov esi, [esp + 4]; get the adress of turtle attributes
+	mov esi, [ebp + 8]; get the adress of turtle attributes
 	mov ebx, 0
 	mov bl, [esi + TURTLE_OFFSET_DIRECTION]; read the turtle's direction
 	; decode the direction
@@ -387,7 +394,7 @@ move_turtle:
 move_decode_horizontal_movement:
 	mov cx, [esi + TURTLE_OFFSET_POSITION_X] ; get the turtle's 'x' coordinate
 	push ecx ; supply the turtle's 'x' coordinate for destination calculation (since we know we will be moving horizontally)
-	mov ecx, [esp + 12]; get the distance to move
+	mov ecx, [ebp + 16]; get the distance to move
 	push ecx; supply the get_[positive/negative]_move_destination with the 'distance' argument
 	cmp bl, 1
 	je move_left ; if direction == 01 , then we move left, otherwise we move right
@@ -395,6 +402,7 @@ move_right:	; move right
 	mov ecx, IMAGE_WIDTH - 1; 
 	push ecx; provide IMAGE_WIDTH - 1 as the "edge coordinate"
 	call get_positive_move_destination
+	add esp, 2*4; clear the stack
 	; move to the incrementing loop
 ;	beqz $s4 , move_right_loop ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
