@@ -7,8 +7,9 @@
 
 int main()
 {
+#if COMPILATION_MODE >= 0
 	std::cout << userMessages::PROGRAM_START;
-
+#endif
 	bool normalExit = true;
 	bool reachedEndOfFile = false;
 
@@ -17,8 +18,9 @@ int main()
 	unsigned char* turtle_attributes = InitializeTurtleAttributes(); // used store the turtle arguments between turtle() calls (non-compressed)
 	int commandsSize = 0;
 	int nextCommandToRead = 0;
-
+#if COMPILATION_MODE >= 0
 	std::cout << userMessages::PROGRAM_INSTRUCTIONS_OPENING << constants::INPUT_FILE <<"\n";
+#endif
 	while (!reachedEndOfFile)
 	{
 		commandsSize = ReadInstructions(commands, nextCommandToRead);
@@ -26,7 +28,7 @@ int main()
 		{
 			nextCommandToRead += commandsSize; // so we know where to start reading next time
 
-#if DEBUG_MODE == 1
+#if COMPILATION_MODE >= 2
 			std::cout << "Turtle Command Size:  " << commandsSize << " :";
 			for (int i = 0; i < commandsSize; i++)
 			{
@@ -38,7 +40,7 @@ int main()
 			std::cout << "Turtle starting:\n";
 #endif
 			int turtleResult = turtle(destinationBitmap, commands, commandsSize, turtle_attributes);
-#if DEBUG_MODE == 1
+#if COMPILATION_MODE >= 2
 			std::cout << "Turtle finishing with result: " << turtleResult << "\n";
 			std::cout << "Turtle attributes :" << turtle_attributes << "\n";
 			DebugPrintCharArrayAsInt(turtle_attributes, constants::TURTLE_ATTRIBUTES_SIZE);
@@ -47,14 +49,16 @@ int main()
 			{
 				if (commandsSize > 2 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
 				{
-					std::cout << nextCommandToRead << "\n";
+#if COMPILATION_MODE >= 1
 					std::cout << userMessages::DISJOINT_WORD_ENCOUNTERED_1 << nextCommandToRead << userMessages::DISJOINT_WORD_ENCOUNTERED_2;
+#endif
 					nextCommandToRead -= 1; // read the severed word as the first one in the next batch of instructions
 				}
 				else
 				{
-					std::cout << nextCommandToRead << "\n";
+#if COMPILATION_MODE >= 0
 					std::cout << userMessages::SEVERED_WORD_ENCOUNTERED_1 << nextCommandToRead + commandsSize - 1 << userMessages::SEVERED_WORD_ENCOUNTERED_2;
+#endif
 					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it
 				}
 			}
@@ -62,13 +66,17 @@ int main()
 			{
 				if (commandsSize > 3 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
 				{
+#if COMPILATION_MODE >= 1
 					int missingByteNumber = nextCommandToRead + 1;
 					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_1 << missingByteNumber << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_2;
+#endif
 					nextCommandToRead -= 3; // read the incomplete set_position command as the first one in the next batch of instructions
 				}
 				else
 				{
+#if COMPILATION_MODE >= 0
 					std::cout << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_1 << nextCommandToRead + commandsSize << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_2;
+#endif
 					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it and finish drawing
 				}
 			}
@@ -76,13 +84,17 @@ int main()
 			{
 				if (commandsSize > 2 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
 				{
+#if COMPILATION_MODE >= 1
 					int missingByteNumber = nextCommandToRead + 1;
 					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_3 << missingByteNumber << " and " << missingByteNumber + 1 << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_4;
+#endif
 					nextCommandToRead -= 2; // read the incomplete set_position command as the first one in the next batch of instructions
 				}
 				else
 				{
+#if COMPILATION_MODE >= 0
 					std::cout << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_3 << nextCommandToRead + commandsSize << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_4;
+#endif
 					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it and finish drawing
 				}
 			}
@@ -97,19 +109,26 @@ int main()
 			normalExit = false;
 		}
 	}
-
 	if (normalExit)
 	{
+#if COMPILATION_MODE >= 0
 		std::cout << userMessages::FINISHED_DRAWING;
+#endif
 		SaveBMP(destinationBitmap);
+#if COMPILATION_MODE >= 0
 		std::cout << userMessages::SAVED_TO_FILE << "\"" << constants::OUTPUT_FILE << "\"\n";
+#endif
 		delete destinationBitmap;
 		delete commands;
 		delete turtle_attributes;
+#if COMPILATION_MODE >= 0
 		std::cout << userMessages::PROGRAM_END;
+#endif
 		return 0;
 	}
+#if COMPILATION_MODE >= 0
 	std::cout << userMessages::PROGRAM_END;
+#endif
 	return 1;
 }
 
@@ -155,16 +174,6 @@ unsigned char* InitializeTurtleAttributes()
 	return initializedAttributes;
 }
 
-void WriteIntToChar(int integerToWrite, unsigned char* targetCharArray, unsigned int startingChar, unsigned int howManyCharsToWrite)
-{
-	for (int i = 0; i < howManyCharsToWrite; i++)
-	{
-		char charToWrite = (char)(integerToWrite % 256);
-		targetCharArray[startingChar + i] = charToWrite;
-		integerToWrite = integerToWrite /256; // shift by 4 bits (1 byte)
-	}
-}
-
 int ReadInstructions(unsigned char* commandsBuffer, int whereToStart)
 {
 	std::ifstream inputFile(constants::INPUT_FILE, std::ios::in | std::ios::binary);
@@ -179,7 +188,9 @@ int ReadInstructions(unsigned char* commandsBuffer, int whereToStart)
 
 		return readBytesCount;
 	} // else there was an error when opening the file
+#if COMPILATION_MODE >= 0
 	std::cout << userMessages::OPEN_FILE_ERROR << "\"" << constants::INPUT_FILE << "\"\n";
+#endif
 	return -1;
 }
 
@@ -192,6 +203,16 @@ bool SaveBMP(unsigned char* bitmapToSave)
 		return true;
 	} // else there was an error when creating the file to write
 	return false;
+}
+
+void WriteIntToChar(int integerToWrite, unsigned char* targetCharArray, unsigned int startingChar, unsigned int howManyCharsToWrite)
+{
+	for (int i = 0; i < howManyCharsToWrite; i++)
+	{
+		char charToWrite = (char)(integerToWrite % 256);
+		targetCharArray[startingChar + i] = charToWrite;
+		integerToWrite = integerToWrite /256; // shift by 4 bits (1 byte)
+	}
 }
 
 void DebugPrintCharArrayAsInt(unsigned char* charArray, int length)

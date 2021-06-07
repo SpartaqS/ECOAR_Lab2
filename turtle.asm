@@ -5,19 +5,6 @@
 
 SECTION .DATA
 
-; TEMP DEBUG PRINT
-    printf_format: db "Result: %d",0xA,0 ; debug code
-	extern printf
-
-%macro debug_log 1
-	pushad; store all registers (so they do not get spoiled by the printf)
-	push dword %1 ; 2nd printf argument
-	push dword printf_format ; 1st printf argument
-	call printf ; printf(printf_format, 1);
-	add esp, 2*4; clear the stack
-	popad; restore all registers
-%endmacro
-
 ; where to find the turtle's attributes on the stack (conting from ESP just after loading in the initial state of the turtle)
 PRESERVED_REGISTERS_SIZE equ 8; how much space non-volatile registers occupy after the prologue
 TURTLE_ATTRIBUTES_SIZE equ 12; all attributes except for color take up 2 bytes + color takes 4, so 4*2 + 4 = 12; those 1 byte long data have to occupy at least 2 byets because push works for at least 2 byte long data
@@ -91,10 +78,8 @@ turtle:
 	push bx;	in the end, it is located at [esp] / [esp + TURTLE_OFFSET_POSITION_X]
 
 	mov ebx, esp
-	;debug_log ebx ; log turtle attributes pointer
 
 	mov ebx, [esp + ARGUMENT_OFFSET_dest_bitmap]
-	;debug_log ebx ; log bitmap pointer
 
 ;	execute the given batch of commands
 	
@@ -114,18 +99,16 @@ read_next_instruction:
 	; if we have not read all instructions: decode the instruction
 
 	mov esi, [esp + ARGUMENT_OFFSET_commands]; get pointer to the commands
-	;debug_log esi
-	;debug_log ebx
 	mov ax, 0
 	mov ax, [esi + ebx - 2]; load the command word (-2 to account for the checking of availability of 2 bytes - a full word)
 	mov ecx, eax; copy the commad word so we can decode it
 
 	and cx, MASK_COMMAND_TYPE ; read command type
-	cmp cx, 192;  (11)000000 - set direction command
+	cmp cx, 0xC0;  (11)000000 - set direction command
 	je read_set_direction_command
-	cmp cx, 64;  (01)000000 - set pen state command
+	cmp cx, 0x40;  (01)000000 - set pen state command
 	je read_set_pen_state_command
-	cmp cx, 0;  (00)000000 - move command X
+	cmp cx, 0x0;  (00)000000 - move command X
 	je read_move_command
 	; the masked out bits are equal to (10)000000 - set position command X
 
@@ -169,20 +152,10 @@ read_next_instruction:
 
 	call set_position
 	add esp, 3*4; clear the stack
-
-
-	;debug_log 7710
-	;debug_log ebx
-
 	jmp read_next_instruction ; finished executing set_position command, read the next instruction
 
 ; set direction command decoding
 read_set_direction_command:
-	
-	;debug_log 7711
-	;debug_log ebx
-	;jmp read_next_instruction ;; TEMP
-
 	; decode the direction 
 	; contents of the register ax :  { - - - - - - - - | 1 1 - - D D - - }
 	and ax, MASK_SET_DIRECTION ; read the correct 2 bits ( ax == DD00)
@@ -192,11 +165,6 @@ read_set_direction_command:
 
 ; set pen state command decoding
 read_set_pen_state_command:
-	
-	;debug_log 7701
-	;debug_log ebx
-	;jmp read_next_instruction ;; TEMP
-
 	; contents of the register ax :  { - - - - - - - - | 0 1 - A - C C C }
 	; decode pen "altitude" (whether it is raised or lowered)
 	mov ecx, eax ; copy the word since it will be needed later
@@ -249,11 +217,6 @@ read_pen_state_decoded_purple:
 
 ; move command decoding
 read_move_command: 
-	
-	;debug_log 7700
-	;debug_log ebx
-
-	;jmp read_next_instruction ;; TEMP
 		; ax register's contents: { m3 m2 m1 m0  - - - - | 0 0 m9 m8  m7 m6 m5 m4 }
 		; and we need to provide the move distance in the form: { (22 zeros) m9 m8 | m7 m6 m5 m4 m3 m2 m1 m0 }
 	mov ecx, eax; make a copy of the word (we will again need it soon)
@@ -321,7 +284,7 @@ exit_request_full_set_position_command:
 
 ; request both words of the set_postition command
 exit_request_full_set_position_command2:
-	mov ecx, 3; '3' means "incomplete set_position command detected, please provide both words at the same time (full 2 words missing)"
+	mov ecx, 3; '3' means "incomplete set_position command detected, please provide both words at the same time (full word missing)"
 	jmp epilogue
 
 
@@ -689,12 +652,6 @@ paint_current_position:
 	shr ecx, 8 ; prepare R
 	mov [eax+2], cl; store R
 
-;	move $t0, $s3 		#load the pen color
-;	sb $t0, ($t2)		#store B
-;	srl $t0, $t0,8
-;	sb $t0, 1($t2)		#store G
-;	srl $t0, $t0,8
-;	sb $t0, 2($t2)		#store R
 	; epilogue (exit the function)				
 	mov esp, ebp
 	pop ebp 
