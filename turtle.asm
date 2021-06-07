@@ -105,6 +105,13 @@ read_next_instruction:
 	cmp ebx, eax ; check if we have finished reading (if the commands_size is odd, will ignore the last byte)
 	jg exit_normal ; we have successfully finished processing the batch of instructions: return control to the caller
 
+	; FEATURE??
+	; check if there is a full word awaiting (mainly if there are at least 2 bytes to read the instructions from)
+	;sub eax, 2; there are at least 2 bytes to read if and only if ebx <= commands_size - 2
+	;cmp ebx, eax ; check if( ebx <= commands_size - 2)
+	;jg exit_request_full_set_position_command ; we found out that the set_position command's first word is at the end of the commands "list": exit and ask for both command words at once
+	
+
 	; if we have not read all instructions: decode the instruction
 
 	mov esi, [esp + ARGUMENT_OFFSET_commands]; get pointer to the commands
@@ -132,12 +139,16 @@ read_next_instruction:
 	
 	; we do have both set_position command's words
 	
+	mov edx, esp; provide the pointer to attributes for the set_position function
+	add edx, TURTLE_OFFSET_POSITION_X
+	push edx;
+
 	; decode the target 'Y' coordinate
 	; the first word of the set_position command is already loaded into eax
 		; the ax register's contents: { (8 irrelevant bits) | 1 0 y5 y4 y3 y2 y1 y0 }
 		; so we can just mask out the correct bits to get the 'Y' coordinate in the appropriate form
-	and ax, MASK_SET_POSITION_Y; directly obtain the value of 'Y'
-	mov word [esp + TURTLE_OFFSET_POSITION_Y], ax; set the new value of turtle's 'Y'
+	and eax, MASK_SET_POSITION_Y; directly obtain the value of 'Y'
+	push eax ; provide the 'Y' coordinate for the set_position function
 
 	; decode the target 'X' coordinate
 	mov ax, [esi + ebx - 2]; load second word of the set_position command
@@ -146,10 +157,14 @@ read_next_instruction:
 	mov cx, ax ; copy the word to extract the 8MSbs
 	and cx, MASK_SET_POSITION_X8MSB ; retrieve the 8 most significant bits of 'X'
 	shl cx, 2 ; "make space" for the 2 least significant bits	
-	and ax, MASK_SET_POSITION_X2LSB ; retrieve the 2 least significant bits of 'X'
+	and eax, MASK_SET_POSITION_X2LSB ; retrieve the 2 least significant bits of 'X'
 	shr ax, 14 ; put the 4 least significant bits into their approptiate "spot"
 	or ax, cx ; obtain the desired 'X' coordinate
-	mov word [esp + TURTLE_OFFSET_POSITION_X], ax; set the new value of turtle's 'X'
+	push eax ; provide the 'X' coordinate for the set_position function
+
+	call set_position
+	add esp, 3*4; clear the stack
+
 
 	;debug_log 7710
 	;debug_log ebx
@@ -414,7 +429,7 @@ move_right:	; move right
 	cmp cx, 0
 	je move_right_loop_start ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
-	mov [esi + TURTLE_OFFSET_POSITION_X], ax  ; we can just set the x coordinate (no need to call set_position since y will not change)
+	mov [esi + TURTLE_OFFSET_POSITION_X], ax  ; we can just set the x coordinate (no need to call  since y will not change)
 	jmp move_finish
 
 move_right_loop_start:
@@ -441,7 +456,7 @@ move_left:	; move left
 	cmp cx, 0
 	je move_left_loop_start ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
-	mov [esi + TURTLE_OFFSET_POSITION_X], ax  ; we can just set the x coordinate (no need to call set_position since y will not change)
+	mov [esi + TURTLE_OFFSET_POSITION_X], ax  ; we can just set the x coordinate (no need to call  since y will not change)
 	jmp move_finish
 
 move_left_loop_start:
@@ -479,7 +494,7 @@ move_up:	; move up
 	cmp cx, 0
 	je move_up_loop_start ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
-	mov [esi + TURTLE_OFFSET_POSITION_Y], ax  ; we can just set the x coordinate (no need to call set_position since y will not change)
+	mov [esi + TURTLE_OFFSET_POSITION_Y], ax  ; we can just set the x coordinate (no need to call  since y will not change)
 	jmp move_finish
 
 move_up_loop_start:
@@ -506,7 +521,7 @@ move_down:	; move down
 	cmp cx, 0
 	je move_down_loop_start ; if pen is lowered, then we need to paint all pixels on the path
 	; the pen is raised => we can just "teleport" to the target position
-	mov [esi + TURTLE_OFFSET_POSITION_Y], ax  ; we can just set the y coordinate (no need to call set_position since x will not change)
+	mov [esi + TURTLE_OFFSET_POSITION_Y], ax  ; we can just set the y coordinate (no need to call  since x will not change)
 	jmp move_finish
 
 move_down_loop_start:
@@ -532,14 +547,68 @@ move_finish:	; epilogue (exit the function)
 	pop ebp 
     ret         ; Return control to the caller
 
+; ======== Turtle Manipulation : set position of the turtle ========
+set_position:
+;description: 
+;	"teleports" the turtle into the specified coordinates (turtle will not leave a trail when moving to the destination)
+;	if provided coordinates are outside of the image, the turtle will try to move as close to the target coordinates as possible
+;arguments:
+;	'dword' [ebp + 16] - pointer to turtle attributes (x86 attributes)
+;	'byte' [ebp + 12] - target 'Y' coordinate (read as unsigned)
+;	'word' [ebp + 8] - target 'X' coordinate (read as unsigned)
+;return value: none
+;accessed turtle attributes: (esi register is used within this function to reference the attributes)
+;	'word', [esi + TURTLE_OFFSET_POSITION_X] - x coordinate
+;	'byte', [esi + TURTLE_OFFSET_POSITION_Y] - y coordinate
+	; prologue
+	; save the caller's frame pointer
+	push ebp
+	mov ebp, esp
+	push esi ; preserve the non-volatile register
+
+	; handle x coordinate
+	mov esi, [ebp + 16]; get the adress of turtle attributes
+	
+	mov ecx, 0 ;
+	mov cx, IMAGE_WIDTH - 1; provide the right-most possible pixel to the clamp function
+	push ecx
+	mov ecx, 0 ; provide the left-most possible pixel (0)
+	push ecx
+	mov cx, [ebp + 8]; provide the "desired" coordinate 'X' to check
+	push ecx
+	call clamp ; if 'X' is outside of the image, will return the value at the edge of the image (if 'X' was negative : 0, if 'X' was too great : the boundary)
+	add esp, 3*4; clear the stack
+	; now ax contains a valid 'X' coordinate: set the turtle's POSITION_X
+	mov [esi + TURTLE_OFFSET_POSITION_X], ax;
+
+	; handle x coordinate
+	mov esi, [ebp + 16]; get the adress of turtle attributes
+	
+	mov ecx, 0 ;
+	mov cl, IMAGE_HEIGHT - 1; provide the right-most possible pixel to the clamp function
+	push ecx
+	mov ecx, 0 ; provide the left-most possible pixel (0)
+	push ecx
+	mov cl, [ebp + 12]; provide the "desired" coordinate 'Y' to check
+	push ecx
+	call clamp ; if 'Y' is outside of the image, will return the value at the edge of the image (if 'Y' was negative : 0, if 'Y' was too great : the boundary)
+	add esp, 3*4; clear the stack
+	; now al contains a valid 'Y' coordinate: set the turtle's POSITION_Y
+	mov [esi + TURTLE_OFFSET_POSITION_Y], al;
+	
+	; epilogue (exit the function)	
+	pop esi ; restore non-volatile register
+	mov esp, ebp
+	pop ebp 
+    ret         ; Return control to the caller (eax contains the valid target coordinate value)
 
 ; ======== Tool: Calculate negative movement destination ========
 get_negative_move_destination:
 ;description: 
 ;	returns clamped destination position (if turtle requests a destination off the image, will return 0 - position at the edge
 ;arguments:
-;	[esp + 12] - distance to move in the negative direction
-;	[esp + 8] - starting position on an axis (pass here the current coordinate of the turtle)
+;	'word' [esp + 12] - distance to move in the negative direction
+;	'word' [esp + 8] - starting position on an axis (pass here the current coordinate of the turtle)
 ;return value:
 ;	eax - the final, valid destination coordinate
 	; prologue
@@ -567,9 +636,9 @@ get_positive_move_destination:
 ;description: 
 ;	returns clamped destination position (if turtle requests a destination off the image, will return $a2 - position at the edge
 ;arguments:
-;	[esp + 16] - distance to move in the positive direction
-;	[esp + 12] - starting position on an axis (pass here the current coordinate of the turtle)
-;	[esp + 8] - greatest valid coordinate in an axis (the "edge" of the image)
+;	'word' [esp + 16] - distance to move in the positive direction
+;	'word' [esp + 12] - starting position on an axis (pass here the current coordinate of the turtle)
+;	'word' [esp + 8] - greatest valid coordinate in an axis (the "edge" of the image)
 ;return value:
 ;	eax - the final, valid destination coordinate
 	; prologue
@@ -597,29 +666,35 @@ get_positive_move_destination_fix:
 	jmp get_positive_move_destination_finish
 	
 ; ======== Tool: return smaller value ========
-min:
+clamp:
 ;description: 
-;	returns the smaller argument's value (both arguments and output are expected to be unsigned)
+;	if the provided value is not within the given range (inclusive), return the value of the boundary that the value exceeds
+;	otherwise return the given value
 ;arguments:
-;	[esp + 12] - 1st value to compare
-;	[esp + 8] - 2nd value to compare
+;	'dword' [ebp + 16] - greatest allowed value
+;	'dword' [ebp + 12] - smallest allowed value
+;	'dword' [ebp + 8] - value to clamp
 ;return value:
-;	eax - the value of the smaller argument
+;	eax - the clamped value
 	; prologue
 	; save the caller's frame pointer
 	push ebp
 	mov ebp, esp
-	;compare the arguments
-	mov eax, [esp + 8]
-	mov ecx, [esp + 12]
-	cmp eax, ecx
-	jle min_finish ; eax is is smaller than (or equal) ecx : do nothing (we will just return eax)
-	; ecx is smaller than eax
-	mov eax, ecx; make sure to return the smaller value
-min_finish:	; epilogue (exit the function)				
+	mov eax, [ebp + 8]; retrieve the value to be examined
+	; compare to the smallest possible value
+	cmp eax, [ebp + 12]
+	jl clamp_too_small_fix; the provided value is smaller than the smallest allowed : return the smallest allowed
+	; compare to the greatest possible value
+	cmp eax, [ebp + 16]
+	jle clamp_finish; the provided value lies within the allowed range : just return it
+	mov eax, [ebp + 16]; provided value too big: return the upper bound
+clamp_finish:	; epilogue (exit the function)				
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller
+clamp_too_small_fix
+	mov eax, [ebp + 12]; return the lower bound
+	jmp clamp_finish;
 
 paint_current_position:
 ;description: 
