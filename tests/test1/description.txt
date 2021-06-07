@@ -1,0 +1,23 @@
+Test file description by Gabriel Skowron-Rodriguez
+(the "input.bin" file was originally named "turtle_test1_v6.bin")
+
+
+The input.bin file was moved to the directory containing the final "program" file
+1. Firstly, the turtle is "teleported" to the coordinates x = 10, y = 10 (lowest possible are (0;0)
+2. Then the turtle is directed upwards
+3. Next, its pen's color is set to red and the pen is lowered
+4. Then the turtle moves 10 pixels forward (leaves a red trail on the all the pixels from the starting position to the end position inclusive)
+5. Afterwards its pen's color is set to red and the pen itself is raised
+6. Next, the turtle moves 10 pixels forward, but because the pen is raised, it "teleports" there (does not leave any trail on its path)
+7. Then again, the pen's color is set to red and it the pen is lowered
+8. Next up, the turtle moves 10 pixels forward (leaving a red trail on the all the pixels from the starting position to the end position inclusive)
+
+9. The turtle is rotated to the right.
+10. Then the steps 3 - 8 are repeated, but using the green color
+11. Next, the turtle is rotated downwards
+12. Then the steps 3 - 8 are repeated yet again, but using the blue color
+13. Finally, the turtle is rotated to the left
+14. And the steps 3 - 8 are repeated, using the black color this time around
+
+After that, the instruction file ("input.bin") has been fully read, so the resulting image is saved into the "output.bmp" file
+The end result are four "corners" of different colors. If we connected the corners together, they would form a 31x31 square
