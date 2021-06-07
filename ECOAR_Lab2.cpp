@@ -18,6 +18,7 @@ int main()
 	int commandsSize = 0;
 	int nextCommandToRead = 0;
 
+	std::cout << userMessages::PROGRAM_INSTRUCTIONS_OPENING << constants::INPUT_FILE <<"\n";
 	while (!reachedEndOfFile)
 	{
 		commandsSize = ReadInstructions(commands, nextCommandToRead);
@@ -46,13 +47,43 @@ int main()
 			{
 				if (commandsSize > 2 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
 				{
-					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_1 << nextCommandToRead + commandsSize << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_2;
-					nextCommandToRead -= 2; // read the severed set_position command as the first one in the next batch of instructions
+					std::cout << nextCommandToRead << "\n";
+					std::cout << userMessages::DISJOINT_WORD_ENCOUNTERED_1 << nextCommandToRead << userMessages::DISJOINT_WORD_ENCOUNTERED_2;
+					nextCommandToRead -= 1; // read the severed word as the first one in the next batch of instructions
+				}
+				else
+				{
+					std::cout << nextCommandToRead << "\n";
+					std::cout << userMessages::SEVERED_WORD_ENCOUNTERED_1 << nextCommandToRead + commandsSize - 1 << userMessages::SEVERED_WORD_ENCOUNTERED_2;
+					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it
+				}
+			}
+			else if (turtleResult == 2) // detected a two-word command whose second word is cut in half (a byte missing)
+			{
+				if (commandsSize > 3 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
+				{
+					int missingByteNumber = nextCommandToRead + 1;
+					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_1 << missingByteNumber << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_2;
+					nextCommandToRead -= 3; // read the incomplete set_position command as the first one in the next batch of instructions
 				}
 				else
 				{
 					std::cout << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_1 << nextCommandToRead + commandsSize << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_2;
-					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it
+					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it and finish drawing
+				}
+			}
+			else if (turtleResult == 3) // detected a two-word command that was cut in half (two bytes missing)
+			{
+				if (commandsSize > 2 && commandsSize <= constants::INSTRUCTIONS_BUFFER_SIZE)// if we are reading more than one word at a time and the set_position command was cut in half (is at the end of the buffer)
+				{
+					int missingByteNumber = nextCommandToRead + 1;
+					std::cout << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_3 << missingByteNumber << " and " << missingByteNumber + 1 << userMessages::DISJOINT_SET_POSITION_ENCOUNTERED_4;
+					nextCommandToRead -= 2; // read the incomplete set_position command as the first one in the next batch of instructions
+				}
+				else
+				{
+					std::cout << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_3 << nextCommandToRead + commandsSize << userMessages::SEVERED_SET_POSITION_ENCOUNTERED_4;
+					reachedEndOfFile = true; // the first word of the set_position command was at the end of the file: we should ignore it and finish drawing
 				}
 			}
 		}

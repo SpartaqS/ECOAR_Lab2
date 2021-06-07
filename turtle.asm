@@ -97,20 +97,19 @@ turtle:
 	;debug_log ebx ; log bitmap pointer
 
 ;	execute the given batch of commands
-
+	
 	mov ebx, 0; start reading from the beginning of the commands
 read_next_instruction:	
-	add ebx, 2;
+	add ebx, 1
 	mov eax, [esp + ARGUMENT_OFFSET_commands_size] ; read commands_size
-	cmp ebx, eax ; check if we have finished reading (if the commands_size is odd, will ignore the last byte)
-	jg exit_normal ; we have successfully finished processing the batch of instructions: return control to the caller
 
-	; FEATURE??
-	; check if there is a full word awaiting (mainly if there are at least 2 bytes to read the instructions from)
-	;sub eax, 2; there are at least 2 bytes to read if and only if ebx <= commands_size - 2
-	;cmp ebx, eax ; check if( ebx <= commands_size - 2)
-	;jg exit_request_full_set_position_command ; we found out that the set_position command's first word is at the end of the commands "list": exit and ask for both command words at once
-	
+	cmp ebx, eax ; check if there is only 1 byte left to read (either the command block is of odd length, or there is one lone byte at the end of the file)
+	je exit_request_full_word ; tell the 'main' cpp code that there is an incomplete word that needs to be taken into the consideration next time
+	; ecx is not equal ebx, so it can be either smaller or greater
+
+	add ebx, 1
+	cmp ebx, eax ; check if we have finished reading (now, 
+	jg exit_normal ; we have successfully finished processing the batch of instructions: return control to the caller
 
 	; if we have not read all instructions: decode the instruction
 
@@ -133,9 +132,15 @@ read_next_instruction:
 ; set position command decoding
 	; check if there is a next word to read 'X' from
 	mov ecx, [esp + ARGUMENT_OFFSET_commands_size] ; read commands_size
-	add ebx, 2; the second command word has been provided if and only if (ebx + 2) <= commands_size
+	
+	add ebx, 1; check if there is at least half of the second word
+	cmp ebx, ecx ; check if( (ebx + 1) == commands_size)
+	je exit_request_full_set_position_command ; it turns out there is only one byte at the end of the file - request the full instruction
+	
+	
+	add ebx, 1; the second command word has been provided if and only if (ebx + 2) <= commands_size
 	cmp ebx, ecx ; check if( (ebx + 2) <= commands_size)
-	jg exit_request_full_set_position_command ; we found out that the set_position command's first word is at the end of the commands "list": exit and ask for both command words at once
+	jg exit_request_full_set_position_command2 ; we found out that the set_position command's first word is at the end of the commands "list": exit and ask for both command words at once
 	
 	; we do have both set_position command's words
 	
@@ -270,70 +275,6 @@ read_move_command:
 
 	jmp read_next_instruction ; finished executing move_turtle command, read the next instruction
 
-; DEBUG CODE AHEAD
-	jmp exit_normal ; comment out to start debug
-	; TEMP : CHANGE PEN COLOR BY 1
-
-	mov ebx, [esp + TURTLE_OFFSET_PEN_COLOR]; read the pen_color
-	debug_log ebx
-	add ebx, 1; increment pen_color
-	debug_log ebx
-	mov dword [esp + TURTLE_OFFSET_PEN_COLOR], ebx; apply the change to pen_color
-
-	; TEMP : CHANGE PEN STATE BY 2
-
-	mov ebx, 0
-	mov bx, [esp + TURTLE_OFFSET_PEN_STATE]; read the pen_color
-	debug_log ebx
-	add bx, 2; increment pen_state
-	debug_log ebx
-	mov word [esp + TURTLE_OFFSET_PEN_STATE], bx; apply the change to pen_color
-
-	; TEMP : CHANGE DIRECTION BY 3
-
-	mov ebx, 0
-	mov bx, [esp + TURTLE_OFFSET_DIRECTION]; read the pen_color
-	debug_log ebx
-	add bx, 3; increment pen_state
-	debug_log ebx
-	mov word [esp + TURTLE_OFFSET_DIRECTION], bx; apply the change to pen_color
-
-	; TEMP : CHANGE Y POSITION BY 4
-
-	mov ebx, 0
-	mov bx, [esp + TURTLE_OFFSET_POSITION_Y]; read the pen_color
-	debug_log ebx
-	add bx, 4; increment pen_state
-	debug_log ebx
-	mov word [esp + TURTLE_OFFSET_POSITION_Y], bx; apply the change to pen_color
-
-	; TEMP : CHANGE X POSITION BY 5
-
-	mov ebx, 0
-	mov bx, [esp + TURTLE_OFFSET_POSITION_X]; read the pen_color
-	debug_log ebx
-	add bx, 5; increment pen_state
-	debug_log ebx
-	mov word [esp + TURTLE_OFFSET_POSITION_X], bx; apply the change to pen_color
-
-; random temporary stuff
-	; how to read the 2nd element of an array pointed by esp+8
-	mov ecx, [esp + ARGUMENT_OFFSET_dest_bitmap] ; read the address of the destination bit map
-	mov edx, ecx ; read the number that is stored in the register (the adress)
-
-	mov ebx, 0; prepare the 32 bit register to read only the first 8 bits
-	mov bx, [edx+2] ; read the "2nd" number under the adress stored in edx
-
-	; how referencing and dereferencing works
-	; [reg] - read the register's content as value
-	; reg - read the register's content as adress
-
-
-	;mov eax, 0 ; need to clear the whole register if we want to output the thing as a 32 bit integer
-	;mov al, [position_y]	; since the target register is 8 bits long, only the first 8 bits under the adress of 'position_y' are loaded
-	;add al, [direction]		; again, because the target register is 8 bits long, the first 8 bits under the adress of 'direction' are subtracted from al
-	;mov ecx, eax ; USE TO SEE THE OUTPUT OF MANIPULATING STATIC VARS
-
 epilogue:
 ;	save the turtle attributes (pass them back so if called again, the turtle resumes from the state it has ended in)
 
@@ -368,10 +309,19 @@ epilogue:
 exit_normal:
 	mov ecx, 0; '0' means "OK"
 	jmp epilogue
+;
+exit_request_full_word:
+	mov ecx, 1; '1' means "incomplete word at the end of file detected, please provide the full word"
+	jmp epilogue
 
 ; request both words of the set_postition command
 exit_request_full_set_position_command:
-	mov ecx, 1; '1' means "incomplete set_position command detected, please provide both words at the same time"
+	mov ecx, 2; '2' means "incomplete set_position command detected, please provide both words at the same time (one byte missing)"
+	jmp epilogue
+
+; request both words of the set_postition command
+exit_request_full_set_position_command2:
+	mov ecx, 3; '3' means "incomplete set_position command detected, please provide both words at the same time (full 2 words missing)"
 	jmp epilogue
 
 
@@ -692,7 +642,7 @@ clamp_finish:	; epilogue (exit the function)
 	mov esp, ebp
 	pop ebp 
     ret         ; Return control to the caller
-clamp_too_small_fix
+clamp_too_small_fix:
 	mov eax, [ebp + 12]; return the lower bound
 	jmp clamp_finish;
 
